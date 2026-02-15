@@ -1,0 +1,21 @@
+.DS_Store
+__pycache__/
+*.pyc
+
+## Large raw data and embeddings
+#MINDlarge_dev/
+#MINDlarge_train/
+#*.tsv
+#*.vec
+#
+## Processed data outputs
+#processed_data/
+
+# Virtual environments
+venv/
+.venv/
+env/
+.env/
+
+# Jupyter
+#.ipynb_checkpoints/

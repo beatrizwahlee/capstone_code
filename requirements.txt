@@ -1,0 +1,25 @@
+# Core dependencies for MIND dataset processing
+pandas>=1.5.0
+numpy>=1.23.0
+scipy>=1.9.0
+
+# For future NLP work (text encoding)
+# Uncomment when you're ready to implement text embeddings
+# transformers>=4.30.0
+# sentence-transformers>=2.2.0
+# torch>=2.0.0
+# tokenizers>=0.13.0
+
+# For visualization (optional but recommended)
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# For advanced metrics (optional)
+# scikit-learn>=1.2.0
+
+# Jupyter notebook support (optional, for exploration)
+# jupyter>=1.0.0
+# ipython>=8.0.0
+
+# Progress bars (optional but nice to have)
+# tqdm>=4.65.0
