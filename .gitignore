@@ -3,13 +3,13 @@ __pycache__/
 *.pyc
 
 ## Large raw data and embeddings
-#MINDlarge_dev/
-#MINDlarge_train/
-#*.tsv
-#*.vec
-#
+MINDlarge_dev/
+MINDlarge_train/
+*.tsv
+*.vec
+
 ## Processed data outputs
-#processed_data/
+processed_data/
 
 # Virtual environments
 venv/
@@ -18,4 +18,4 @@ env/
 .env/
 
 # Jupyter
-#.ipynb_checkpoints/
+.ipynb_checkpoints/
