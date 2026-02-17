@@ -10,6 +10,7 @@ MINDlarge_train/
 
 ## Processed data outputs
 processed_data/
+processed_data_v2/
 
 # Virtual environments
 venv/

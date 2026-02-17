@@ -1,0 +1,56 @@
+# ============================================================
+# Requirements for Diversity-Aware News Recommender System
+# ============================================================
+# Install all at once:
+#   pip install -r requirements.txt
+#
+# For GPU support (faster SBERT encoding):
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu118
+#   (then install the rest of this file)
+# ============================================================
+
+# ---- Core data stack (Phase 0 — already in use) ----
+pandas>=1.5.0
+numpy>=1.23.0
+scipy>=1.9.0
+scikit-learn>=1.2.0
+
+# ---- Phase 1: NLP Encoding ----
+# Sentence-BERT: semantic text embeddings
+# Encodes 101K articles ~30 min CPU / ~3 min GPU
+sentence-transformers>=2.2.0
+
+# PyTorch: required by sentence-transformers
+# CPU-only (smaller download, works on any machine):
+torch>=2.0.0
+
+# FAISS: fast approximate nearest-neighbour search
+# Sub-millisecond retrieval over 101K article embeddings
+# CPU version (no GPU required):
+faiss-cpu>=1.7.4
+
+# Tokenizers backend for sentence-transformers
+tokenizers>=0.13.0
+transformers>=4.30.0
+
+# ---- Progress bars (used in SBERT encoding loop) ----
+tqdm>=4.65.0
+
+# ---- Visualization (for Phase 3 echo chamber analysis) ----
+matplotlib>=3.6.0
+seaborn>=0.12.0
+
+# ---- Future phases (uncomment when you get there) ----
+# Phase 2 — Baseline training
+# torch>=2.0.0                   # already required above
+
+# Phase 6 — LLM reframing
+# anthropic>=0.20.0              # Claude API
+
+# Phase 7 — Web app backend
+# fastapi>=0.100.0
+# uvicorn>=0.23.0
+# pydantic>=2.0.0
+
+# Phase 7 — Web app database
+# sqlalchemy>=2.0.0
