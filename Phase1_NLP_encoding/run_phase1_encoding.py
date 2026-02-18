@@ -33,6 +33,8 @@ from pathlib import Path
 import numpy as np
 import pandas as pd
 
+base_dir = Path(__file__).resolve().parent
+
 # ---------------------------------------------------------------------------
 # Configuration — edit these to match your directory layout
 # ---------------------------------------------------------------------------
@@ -44,7 +46,7 @@ CONFIG = {
     "train_data_dir":  "./MINDlarge_train",   # or ./MINDsmall_train
 
     # Where Phase 1 will write its outputs
-    "embeddings_dir":  "./embeddings",
+    "embeddings_dir":  str(base_dir / "embeddings"),
 
     # SBERT model to use.
     # "all-MiniLM-L6-v2"       — fast, good quality (recommended for CPU)
@@ -55,8 +57,36 @@ CONFIG = {
     "device":  "cpu",
 
     # SBERT encoding batch size.
-    # 64 is safe on 8 GB RAM.  Increase to 128+ if GPU / more RAM available.
-    "sbert_batch_size":  64,
+    # ─────────────────────────────────────────────────────────────────────
+    # IMPORTANT: Do NOT use a very small batch size on CPU.
+    # Each batch has fixed tokenization overhead regardless of size.
+    # batch_size=16  →  6,346 batches  →  slow (too much overhead per batch)
+    # batch_size=32  →  3,173 batches  →  good default for most laptops
+    # batch_size=64  →  1,587 batches  →  ideal for 16 GB+ RAM
+    "sbert_batch_size":  32,
+
+    # Checkpoint: save partial SBERT results every N articles.
+    # If the script is interrupted, re-running it resumes from here
+    # instead of starting over from article 0.
+    # Set sbert_checkpoint_path to None to disable (not recommended on CPU).
+    "sbert_checkpoint_path":   None,
+    "sbert_checkpoint_every":  2000,
+
+    # ── Colab pre-computed SBERT path ──────────────────────────────────────
+    # RECOMMENDED WORKFLOW FOR CPU-ONLY MACHINES:
+    #   1. Open phase1_sbert_colab.ipynb in Google Colab (free T4 GPU)
+    #   2. Upload news_features_train.csv, run all cells (~3 min)
+    #   3. Download sbert_news_embeddings.npy + news_id_order.json
+    #   4. Put both files in ./embeddings/
+    #   5. Set this path — the script will skip SBERT and run Towers 2+3 only
+    #
+    # Set to None to encode locally (only viable with a GPU or overnight run).
+    "precomputed_sbert_path":  None,
+
+    # Sample mode: encode only the first N articles (for fast testing).
+    # Set to 5000 to test the full pipeline in ~5 min before the full run.
+    # Set to None to encode all 101K articles (the real run).
+    "sample_n":  None,
 
     # Max history length per user for profile building
     "max_history":  50,
@@ -72,6 +102,14 @@ CONFIG = {
 CONFIG["processed_data_dir"] = os.environ.get("PROCESSED_DIR", CONFIG["processed_data_dir"])
 CONFIG["train_data_dir"]      = os.environ.get("TRAIN_DIR",     CONFIG["train_data_dir"])
 CONFIG["embeddings_dir"]      = os.environ.get("EMBEDDINGS_DIR", CONFIG["embeddings_dir"])
+CONFIG["sbert_checkpoint_path"] = os.environ.get(
+    "SBERT_CHECKPOINT_PATH",
+    str(Path(CONFIG["embeddings_dir"]) / "sbert_checkpoint.npy")
+)
+CONFIG["precomputed_sbert_path"] = os.environ.get(
+    "PRECOMPUTED_SBERT_PATH",
+    str(Path(CONFIG["embeddings_dir"]) / "sbert_news_embeddings.npy")
+)
 
 # ---------------------------------------------------------------------------
 # Logging
@@ -83,11 +121,11 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Import Phase 1 modules
-# (adjust if your project has a different directory structure)
-# ---------------------------------------------------------------------------
-sys.path.insert(0, str(Path(__file__).parent))
+sys.path.insert(0, str(base_dir))
+
+phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing_v1"
+if phase0_path.exists():
+    sys.path.insert(0, str(phase0_path))
 
 from nlp_encoder import (
     NewsEncoderPhase1,
@@ -191,16 +229,29 @@ def run_encoding(news_df: pd.DataFrame, entity_embeddings: dict) -> NewsEncoderP
     logger.info("Step 2/5 — Three-tower encoding")
     logger.info("=" * 60)
 
+    # Apply sample_n if set (for fast pipeline testing)
+    sample_n = CONFIG.get("sample_n")
+    if sample_n and sample_n > 0:
+        logger.info(f"  SAMPLE MODE: encoding only first {sample_n:,} articles")
+        logger.info(f"  (Set sample_n=None in CONFIG for the full dataset)")
+        news_df = news_df.head(sample_n).reset_index(drop=True)
+
     encoder = NewsEncoderPhase1(
         sbert_model=CONFIG["sbert_model"],
         device=CONFIG["device"],
     )
+
+    # Create embeddings dir early so checkpoint path is valid
+    Path(CONFIG["embeddings_dir"]).mkdir(parents=True, exist_ok=True)
 
     encoder.fit(
         news_df=news_df,
         entity_embeddings=entity_embeddings,
         sbert_batch_size=CONFIG["sbert_batch_size"],
         build_faiss=True,
+        sbert_checkpoint_path=CONFIG.get("sbert_checkpoint_path"),
+        sbert_checkpoint_every=CONFIG.get("sbert_checkpoint_every", 2000),
+        precomputed_sbert_path=CONFIG.get("precomputed_sbert_path"),
     )
 
     return encoder

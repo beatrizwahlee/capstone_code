@@ -8,9 +8,12 @@ MINDlarge_train/
 *.tsv
 *.vec
 
-## Processed data outputs
-processed_data/
-processed_data_v2/
+## Processed data and embeddings (large, generated)
+Phase0_data_processing/processed_data/
+Phase0_data_processing/processed_data_v2/
+Phase1_NLP_encoding/embeddings/
+Phase2_baseline_rec/outputs/
+Phase3_echo_chambers/outputs/
 
 # Virtual environments
 venv/
@@ -19,4 +22,4 @@ env/
 .env/
 
 # Jupyter
-.ipynb_checkpoints/
+#.ipynb_checkpoints/

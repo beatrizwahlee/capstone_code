@@ -159,19 +159,39 @@ class SBERTTextEncoder:
         news_df: pd.DataFrame,
         batch_size: int = 64,
         show_progress: bool = True,
+        checkpoint_path: Optional[str] = None,
+        checkpoint_every: int = 2000,
     ) -> np.ndarray:
         """
         Encode all articles into 384-dim L2-normalised vectors.
 
-        Input text: "{title} {abstract}" — title carries the most signal,
-        abstract adds context.  Separator space is sufficient; SBERT handles
-        punctuation and capitalization internally.
+        Supports RESUMABLE encoding via checkpointing: if the process is
+        interrupted (Ctrl-C, crash, sleep), re-running the script will
+        automatically pick up from the last saved checkpoint instead of
+        starting over from article 0.
+
+        CPU performance note
+        --------------------
+        On older Intel CPUs (SSE4.2 only, no AVX — like your machine),
+        each batch takes longer than expected. The optimal strategy is
+        LARGER batches (32-64), not smaller ones, because the per-batch
+        overhead (tokenization, padding, data movement) is paid once per
+        batch regardless of size. batch_size=16 means 6,346 batches;
+        batch_size=64 means 1,587 batches — 4× less overhead.
+
+        Input text: "{title} {abstract}"
 
         Args:
-            news_df:       DataFrame with 'title' and 'abstract' columns.
-            batch_size:    Encoding batch size.  64 is safe on 8 GB RAM;
-                           increase to 128-256 if GPU is available.
-            show_progress: Show tqdm progress bar.
+            news_df:           DataFrame with 'title' and 'abstract' columns.
+            batch_size:        Encoding batch size. Use 32-64 on CPU.
+                               Do NOT go lower than 32 — it makes things slower.
+            show_progress:     Show tqdm progress bar.
+            checkpoint_path:   Path to save/load partial results (e.g.,
+                               './embeddings/sbert_checkpoint.npy').
+                               If None, no checkpointing (runs in one shot).
+            checkpoint_every:  Save a checkpoint every N articles.
+                               2000 = saves ~50 times for 101K articles.
+                               Each checkpoint takes ~1 second to write.
 
         Returns:
             Float32 array of shape (N, 384), L2-normalised.
@@ -184,24 +204,117 @@ class SBERTTextEncoder:
             + news_df["abstract"].fillna("").astype(str)
         ).tolist()
 
-        logger.info(f"Encoding {len(texts):,} articles with SBERT …")
-        t0 = time.time()
+        N = len(texts)
+        logger.info(f"Encoding {N:,} articles with SBERT (batch_size={batch_size}) …")
 
-        embeddings = self._model.encode(
-            texts,
-            batch_size=batch_size,
-            show_progress_bar=show_progress,
-            convert_to_numpy=True,
-            normalize_embeddings=True,   # L2-norm built-in
+        # ── Try to resume from checkpoint ──────────────────────────────────
+        start_idx = 0
+        all_embeddings: List[np.ndarray] = []
+
+        ckpt_path = Path(checkpoint_path) if checkpoint_path else None
+        ckpt_meta_path = ckpt_path.with_suffix(".meta.json") if ckpt_path else None
+
+        if ckpt_path and ckpt_path.exists() and ckpt_meta_path and ckpt_meta_path.exists():
+            try:
+                with open(ckpt_meta_path) as f:
+                    meta = json.load(f)
+                saved_n = meta.get("n_encoded", 0)
+                if saved_n > 0 and saved_n < N:
+                    partial = np.load(str(ckpt_path))
+                    if partial.shape[0] == saved_n:
+                        all_embeddings = [partial]
+                        start_idx = saved_n
+                        logger.info(
+                            f"  ✔ Resuming from checkpoint: {saved_n:,}/{N:,} articles "
+                            f"already encoded ({saved_n/N*100:.1f}%)"
+                        )
+                    else:
+                        logger.warning("  Checkpoint shape mismatch — starting fresh.")
+                elif saved_n >= N:
+                    logger.info(f"  ✔ Checkpoint complete ({saved_n:,} articles). Loading …")
+                    return np.load(str(ckpt_path))
+            except Exception as e:
+                logger.warning(f"  Could not load checkpoint ({e}). Starting fresh.")
+
+        if start_idx == 0:
+            logger.info(f"  Starting fresh encoding …")
+
+        # ── Encode in manual chunks so we can checkpoint ───────────────────
+        t0 = time.time()
+        remaining_texts = texts[start_idx:]
+        n_remaining = len(remaining_texts)
+
+        # Split remaining texts into chunks of checkpoint_every
+        chunk_size = checkpoint_every
+        chunks = [
+            remaining_texts[i: i + chunk_size]
+            for i in range(0, n_remaining, chunk_size)
+        ]
+
+        logger.info(
+            f"  Articles remaining: {n_remaining:,}  |  "
+            f"Chunks: {len(chunks)}  |  "
+            f"Articles/chunk: {chunk_size:,}"
         )
+        logger.info(
+            f"  Estimated time: "
+            f"{n_remaining / 60:.0f}–{n_remaining / 30:.0f} min on CPU  "
+            f"(varies greatly by machine)"
+        )
+
+        encoded_so_far = start_idx
+        for chunk_i, chunk_texts in enumerate(chunks):
+            t_chunk = time.time()
+
+            chunk_embs = self._model.encode(
+                chunk_texts,
+                batch_size=batch_size,
+                show_progress_bar=show_progress,
+                convert_to_numpy=True,
+                normalize_embeddings=True,
+            )
+            all_embeddings.append(chunk_embs.astype(np.float32))
+            encoded_so_far += len(chunk_texts)
+
+            elapsed_chunk = time.time() - t_chunk
+            elapsed_total = time.time() - t0
+            speed = len(chunk_texts) / elapsed_chunk
+            remaining_articles = N - encoded_so_far
+            eta_min = (remaining_articles / speed / 60) if speed > 0 else 0
+
+            logger.info(
+                f"  Chunk {chunk_i+1}/{len(chunks)} done  |  "
+                f"{encoded_so_far:,}/{N:,} articles ({encoded_so_far/N*100:.1f}%)  |  "
+                f"Speed: {speed:.0f} art/s  |  "
+                f"ETA: {eta_min:.1f} min"
+            )
+
+            # Save checkpoint
+            if ckpt_path is not None:
+                partial_arr = np.vstack(all_embeddings)
+                np.save(str(ckpt_path), partial_arr)
+                with open(str(ckpt_meta_path), "w") as f:
+                    json.dump({"n_encoded": encoded_so_far, "total": N}, f)
+                logger.info(f"  💾 Checkpoint saved ({encoded_so_far:,} articles)")
+
+        # ── Stack all chunks into final array ──────────────────────────────
+        embeddings = np.vstack(all_embeddings).astype(np.float32)
 
         elapsed = time.time() - t0
         logger.info(
-            f"SBERT encoding done in {elapsed:.1f}s  "
-            f"({len(texts)/elapsed:.0f} articles/s)  "
+            f"SBERT encoding done in {elapsed/60:.1f} min  "
+            f"({N/elapsed:.0f} articles/s)  "
             f"Shape: {embeddings.shape}"
         )
-        return embeddings.astype(np.float32)
+
+        # Clean up checkpoint now that we have the full result
+        if ckpt_path and ckpt_path.exists():
+            ckpt_path.unlink(missing_ok=True)
+            if ckpt_meta_path and ckpt_meta_path.exists():
+                ckpt_meta_path.unlink(missing_ok=True)
+            logger.info("  Checkpoint files cleaned up (full encoding complete).")
+
+        return embeddings
 
 
 # ---------------------------------------------------------------------------
@@ -866,18 +979,32 @@ class NewsEncoderPhase1:
         entity_embeddings: Dict[str, np.ndarray],
         sbert_batch_size: int = 64,
         build_faiss: bool = True,
+        sbert_checkpoint_path: Optional[str] = None,
+        sbert_checkpoint_every: int = 2000,
+        precomputed_sbert_path: Optional[str] = None,
     ) -> "NewsEncoderPhase1":
         """
         Encode all articles and build the FAISS retrieval index.
 
         Args:
-            news_df:           Cleaned news DataFrame from MINDDataLoader.
-                               Required columns: news_id, title, abstract,
-                               category, subcategory, all_entities.
-            entity_embeddings: Dict from MINDDataLoader.load_entity_embeddings().
-            sbert_batch_size:  SBERT encoding batch size.
-            build_faiss:       Whether to build the FAISS index after encoding.
-                               Set False to skip if you only need embeddings.
+            news_df:                   Cleaned news DataFrame from MINDDataLoader.
+                                       Required columns: news_id, title, abstract,
+                                       category, subcategory, all_entities.
+            entity_embeddings:         Dict from MINDDataLoader.load_entity_embeddings().
+            sbert_batch_size:          SBERT batch size. Use 32-64 on CPU.
+                                       Larger = fewer overhead calls = faster.
+            build_faiss:               Whether to build the FAISS index.
+            sbert_checkpoint_path:     Path to save/resume SBERT partial results.
+                                       Set this! If encoding is interrupted it
+                                       resumes from the last checkpoint.
+            sbert_checkpoint_every:    Save every N articles (default 2000).
+            precomputed_sbert_path:    Path to a pre-computed sbert_news_embeddings.npy
+                                       file (e.g. generated on Google Colab GPU).
+                                       If set and file exists, SBERT encoding is
+                                       skipped entirely — Towers 2+3 run as normal.
+                                       This is the recommended workflow for CPU-only
+                                       machines: encode once on free Colab GPU,
+                                       then run everything else locally.
 
         Returns:
             self (for chaining)
@@ -896,9 +1023,42 @@ class NewsEncoderPhase1:
         # Tower 1: SBERT
         # -------------------------------------------------------
         logger.info("\n[Tower 1/3] Sentence-BERT text encoding …")
-        self.sbert_embeddings = self.text_encoder.encode(
-            news_df, batch_size=sbert_batch_size
-        )
+
+        if precomputed_sbert_path and Path(precomputed_sbert_path).exists():
+            # Fast path: load SBERT embeddings computed on Colab/GPU
+            logger.info(f"  Loading pre-computed SBERT from {precomputed_sbert_path} …")
+            self.sbert_embeddings = np.load(precomputed_sbert_path).astype(np.float32)
+
+            # Validate alignment using news_id_order if provided
+            order_path = Path(precomputed_sbert_path).parent / "news_id_order.json"
+            if order_path.exists():
+                with open(order_path) as f_order:
+                    colab_order = json.load(f_order)
+                if colab_order != self.news_ids:
+                    logger.warning(
+                        "  news_id order in pre-computed file differs from current news_df. "
+                        "Re-indexing to align …"
+                    )
+                    colab_idx = {nid: i for i, nid in enumerate(colab_order)}
+                    reordered = np.zeros_like(self.sbert_embeddings)
+                    for new_i, nid in enumerate(self.news_ids):
+                        old_i = colab_idx.get(nid)
+                        if old_i is not None:
+                            reordered[new_i] = self.sbert_embeddings[old_i]
+                    self.sbert_embeddings = reordered
+                    logger.info("  Re-indexing complete.")
+                else:
+                    logger.info("  news_id order matches — no re-indexing needed.")
+            logger.info(f"  SBERT loaded: {self.sbert_embeddings.shape}")
+        else:
+            # Slow path: encode on this machine (CPU will take a long time)
+            self.sbert_embeddings = self.text_encoder.encode(
+                news_df,
+                batch_size=sbert_batch_size,
+                checkpoint_path=sbert_checkpoint_path,
+                checkpoint_every=sbert_checkpoint_every,
+            )
+
         assert self.sbert_embeddings.shape == (len(news_df), self.SBERT_DIM), \
             f"SBERT shape mismatch: {self.sbert_embeddings.shape}"
 
