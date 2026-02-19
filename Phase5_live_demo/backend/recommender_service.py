@@ -200,6 +200,43 @@ for _art in MOCK_ARTICLES:
     _BY_CATEGORY.setdefault(_art["category"], []).append(_art)
 ALL_CATEGORIES: list[str] = sorted(_BY_CATEGORY.keys())
 
+# ---------------------------------------------------------------------------
+# Mock user profiles (demo accounts)
+# ---------------------------------------------------------------------------
+
+MOCK_USER_PROFILES: dict[str, dict] = {
+    "U1001": {
+        "display_name": "Alex — Sports Fan",
+        "top_categories": ["sports"],
+        "history": ["N001", "N002", "N003", "N004", "N005", "N006", "N007", "N008", "N009", "N010", "N011", "N012"],
+    },
+    "U1002": {
+        "display_name": "Jordan — Tech Enthusiast",
+        "top_categories": ["technology", "science"],
+        "history": ["N025", "N026", "N027", "N028", "N029", "N030", "N031", "N032", "N033", "N034", "N085", "N088"],
+    },
+    "U1003": {
+        "display_name": "Morgan — Health & Wellness",
+        "top_categories": ["health", "lifestyle"],
+        "history": ["N013", "N014", "N015", "N016", "N017", "N018", "N019", "N020", "N109", "N112", "N113", "N117"],
+    },
+    "U1004": {
+        "display_name": "Riley — News & Politics",
+        "top_categories": ["politics", "finance"],
+        "history": ["N037", "N038", "N039", "N040", "N041", "N042", "N043", "N049", "N050", "N055"],
+    },
+    "U1005": {
+        "display_name": "Sam — Finance & Markets",
+        "top_categories": ["finance", "technology"],
+        "history": ["N049", "N050", "N051", "N052", "N053", "N054", "N055", "N056", "N057", "N058", "N059"],
+    },
+    "U1006": {
+        "display_name": "Taylor — Curious Reader",
+        "top_categories": ["science", "travel", "entertainment"],
+        "history": ["N061", "N062", "N073", "N074", "N085", "N086", "N087", "N090", "N097", "N121"],
+    },
+}
+
 
 # ---------------------------------------------------------------------------
 # Metric helpers (pure functions, work for both real and mock mode)
@@ -327,6 +364,75 @@ def _mock_serendipity(history: list[str], k: int, beta: float) -> list[dict]:
     return sorted(candidates, key=score_fn, reverse=True)[:k]
 
 
+def _mock_composite(history: list[str], k: int, **params: Any) -> list[dict]:
+    """Composite: all 4 diversity dimensions active simultaneously with per-weight control."""
+    w_rel  = params.get("w_relevance",   0.40)
+    w_div  = params.get("w_diversity",   0.15)
+    w_cal  = params.get("w_calibration", 0.15)
+    w_ser  = params.get("w_serendipity", 0.15)
+    w_fair = params.get("w_fairness",    0.15)
+    explore = params.get("explore_weight", 0.30)
+
+    candidates = _exclude(MOCK_ARTICLES, history)
+    if not candidates:
+        return []
+
+    hist_cats_set  = {_ARTICLE_BY_ID[h]["category"] for h in history if h in _ARTICLE_BY_ID}
+    hist_cat_list  = [_ARTICLE_BY_ID[h]["category"] for h in history if h in _ARTICLE_BY_ID]
+    hist_scores    = [_ARTICLE_BY_ID[h]["score"]    for h in history if h in _ARTICLE_BY_ID]
+    user_pop_mean  = sum(hist_scores) / len(hist_scores) if hist_scores else 0.5
+
+    if hist_cat_list:
+        cat_counts = Counter(hist_cat_list)
+        total = sum(cat_counts.values())
+        hist_dist = {c: v / total for c, v in cat_counts.items()}
+    else:
+        hist_dist = {}
+
+    uniform = 1.0 / max(len(ALL_CATEGORIES), 1)
+    target_dist = {
+        c: (1 - explore) * hist_dist.get(c, 0.0) + explore * uniform
+        for c in ALL_CATEGORIES
+    }
+
+    selected: list[dict] = []
+    remaining = list(candidates)
+    selected_cats: list[str] = []
+
+    while len(selected) < k and remaining:
+        n_sel = max(1, len(selected))
+        sc_snap = list(selected_cats)
+
+        def score_fn(a: dict, _n: int = n_sel, _sc: list = sc_snap) -> float:
+            cat = a["category"]
+            # 1. Relevance
+            rel = a["score"]
+            # 2. Diversity: penalise repeated categories
+            div_score = 1.0 - _sc.count(cat) / _n
+            # 3. Calibration: reward filling under-represented categories
+            cur_prop = _sc.count(cat) / _n
+            tgt_prop = target_dist.get(cat, uniform)
+            cal_score = min(1.0, max(0.0, (tgt_prop - cur_prop) * len(ALL_CATEGORIES)))
+            # 4. Serendipity: prefer categories outside reading history
+            ser_score = 0.0 if cat in hist_cats_set else 1.0
+            # 5. Fairness: prefer articles whose popularity matches user preference
+            fair_score = 1.0 - abs(a["score"] - user_pop_mean)
+            return (
+                w_rel  * rel
+                + w_div  * div_score
+                + w_cal  * cal_score
+                + w_ser  * ser_score
+                + w_fair * fair_score
+            )
+
+        best = max(remaining, key=score_fn)
+        selected.append(best)
+        selected_cats.append(best["category"])
+        remaining.remove(best)
+
+    return selected
+
+
 def _mock_xquad(history: list[str], k: int, lambda_param: float) -> list[dict]:
     """xQuAD: proportional category coverage with diversity bonus."""
     candidates = _exclude(MOCK_ARTICLES, history)
@@ -435,6 +541,41 @@ class RecommenderService:
     # Public API
     # ------------------------------------------------------------------
 
+    def get_available_users(self) -> list[dict]:
+        """Return list of demo user profiles for the login page."""
+        if self.mock_mode:
+            return [
+                {
+                    "user_id": uid,
+                    "display_name": info["display_name"],
+                    "top_categories": info["top_categories"],
+                    "history_count": len(info["history"]),
+                }
+                for uid, info in MOCK_USER_PROFILES.items()
+            ]
+        # Real mode: return a sample of users from the behaviors data
+        try:
+            users = []
+            if self._news_df is not None:
+                # Use mock profiles as representative demo accounts even in real mode
+                for uid, info in MOCK_USER_PROFILES.items():
+                    users.append({
+                        "user_id": uid,
+                        "display_name": info["display_name"],
+                        "top_categories": info["top_categories"],
+                        "history_count": len(info["history"]),
+                    })
+            return users
+        except Exception:
+            return []
+
+    def get_user_info(self, user_id: str) -> dict | None:
+        """Return history and metadata for a known user."""
+        # Always check mock profiles first (they work in both modes)
+        if user_id in MOCK_USER_PROFILES:
+            return MOCK_USER_PROFILES[user_id]
+        return None
+
     def get_article(self, news_id: str) -> dict | None:
         return self._article_db.get(news_id)
 
@@ -513,6 +654,8 @@ class RecommenderService:
     ) -> list[dict]:
         if method == "baseline":
             return _mock_baseline(history, k)
+        if method == "composite":
+            return _mock_composite(history, k, **params)
         if method == "mmr":
             return _mock_mmr(history, k, params.get("lambda_param", 0.5))
         if method == "calibrated":

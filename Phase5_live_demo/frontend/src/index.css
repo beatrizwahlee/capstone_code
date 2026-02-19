@@ -7,66 +7,113 @@
     font-family: 'Inter', system-ui, sans-serif;
   }
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    @apply bg-paper text-ink antialiased;
+  }
+  h1, h2, h3, .headline {
+    font-family: 'Playfair Display', Georgia, serif;
   }
 }
 
 @layer components {
-  .badge {
-    @apply inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold uppercase tracking-wide;
+  /* ── Newspaper structural elements ── */
+  .masthead-rule {
+    @apply border-t-4 border-b border-ink;
   }
+  .section-rule {
+    @apply border-t-2 border-ink mb-1;
+  }
+  .thin-rule {
+    @apply border-t border-rule;
+  }
+
+  /* ── Badges ── */
+  .badge {
+    @apply inline-flex items-center px-2 py-0.5 text-xs font-semibold uppercase tracking-widest;
+  }
+  .badge-section {
+    @apply text-xs font-bold uppercase tracking-widest text-masthead;
+  }
+
+  /* ── Buttons ── */
   .btn-primary {
-    @apply inline-flex items-center gap-1 px-4 py-2 rounded-lg bg-blue-600 text-white text-sm font-medium
-           hover:bg-blue-700 active:bg-blue-800 transition-colors disabled:opacity-50 disabled:cursor-not-allowed;
+    @apply inline-flex items-center gap-1 px-4 py-2 bg-masthead text-white text-sm font-medium
+           hover:bg-blue-900 active:bg-blue-950 transition-colors
+           disabled:opacity-50 disabled:cursor-not-allowed;
   }
   .btn-ghost {
-    @apply inline-flex items-center gap-1 px-4 py-2 rounded-lg border border-gray-200 text-gray-700 text-sm font-medium
-           hover:bg-gray-100 active:bg-gray-200 transition-colors;
+    @apply inline-flex items-center gap-1 px-4 py-2 border border-rule text-ink-light text-sm font-medium
+           hover:bg-paper/60 hover:border-ink transition-colors;
   }
+  .btn-read {
+    @apply inline-flex items-center gap-1 px-3 py-1 text-xs font-semibold uppercase tracking-wide
+           border border-ink text-ink hover:bg-ink hover:text-paper transition-colors;
+  }
+
+  /* ── Card (used in quiz / sidebar) ── */
   .card {
-    @apply bg-white rounded-xl border border-gray-200 shadow-sm;
+    @apply bg-white border border-rule shadow-sm;
   }
+
+  /* ── Article tile ── */
+  .article-tile {
+    @apply bg-white border border-rule shadow-sm h-full flex flex-col;
+  }
+
+  /* ── Range slider ── */
   .slider {
-    @apply w-full h-2 rounded-full appearance-none cursor-pointer bg-gray-200
+    @apply w-full h-1.5 rounded-none appearance-none cursor-pointer bg-rule
            [&::-webkit-slider-thumb]:appearance-none
-           [&::-webkit-slider-thumb]:w-4
-           [&::-webkit-slider-thumb]:h-4
-           [&::-webkit-slider-thumb]:rounded-full
-           [&::-webkit-slider-thumb]:bg-blue-600
-           [&::-webkit-slider-thumb]:shadow-sm
+           [&::-webkit-slider-thumb]:w-3.5
+           [&::-webkit-slider-thumb]:h-3.5
+           [&::-webkit-slider-thumb]:rounded-none
+           [&::-webkit-slider-thumb]:bg-masthead
            [&::-webkit-slider-thumb]:cursor-pointer
-           [&::-moz-range-thumb]:w-4
-           [&::-moz-range-thumb]:h-4
-           [&::-moz-range-thumb]:rounded-full
-           [&::-moz-range-thumb]:bg-blue-600
+           [&::-moz-range-thumb]:w-3.5
+           [&::-moz-range-thumb]:h-3.5
+           [&::-moz-range-thumb]:rounded-none
+           [&::-moz-range-thumb]:bg-masthead
            [&::-moz-range-thumb]:border-0
            [&::-moz-range-thumb]:cursor-pointer;
   }
 }
 
-/* Animated gradient for quiz step 3 */
-@keyframes gradient-shift {
-  0%   { background-position: 0% 50%; }
-  50%  { background-position: 100% 50%; }
-  100% { background-position: 0% 50%; }
-}
-
-.gradient-anim {
-  background-size: 200% 200%;
-  animation: gradient-shift 3s ease infinite;
-}
-
-/* Fade-in transition for quiz steps */
+/* ── Animations ── */
 @keyframes fadeSlideIn {
-  from { opacity: 0; transform: translateY(12px); }
+  from { opacity: 0; transform: translateY(10px); }
   to   { opacity: 1; transform: translateY(0); }
 }
-
 .fade-slide-in {
   animation: fadeSlideIn 0.3s ease forwards;
 }
 
-/* Score progress bar */
-.score-bar {
-  @apply h-1 rounded-full bg-gradient-to-r from-blue-400 to-blue-600;
+@keyframes fadeIn {
+  from { opacity: 0; }
+  to   { opacity: 1; }
+}
+.fade-in {
+  animation: fadeIn 0.2s ease forwards;
+}
+
+/* ── Newspaper column grid for articles ── */
+.article-grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 0.75rem;
+}
+@media (min-width: 640px) {
+  .article-grid {
+    grid-template-columns: repeat(2, 1fr);
+    gap: 0.75rem;
+  }
+}
+
+/* ── Article skeleton pulse ── */
+.skeleton {
+  @apply animate-pulse bg-rule/30;
+}
+
+/* ── Modal overlay ── */
+.modal-overlay {
+  @apply fixed inset-0 bg-ink/60 z-50 flex items-center justify-center p-4;
+  backdrop-filter: blur(2px);
 }

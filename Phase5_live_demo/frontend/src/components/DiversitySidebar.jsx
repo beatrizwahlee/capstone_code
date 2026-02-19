@@ -1,130 +1,95 @@
 const METHOD_META = {
-  baseline:    { label: 'Baseline',    color: 'bg-gray-100 text-gray-700',    desc: 'Accuracy only'            },
-  mmr:         { label: 'MMR',         color: 'bg-blue-100 text-blue-800',    desc: 'Balanced diversity'        },
-  calibrated:  { label: 'Calibrated',  color: 'bg-green-100 text-green-800',  desc: 'Matches your history'      },
-  serendipity: { label: 'Serendipity', color: 'bg-purple-100 text-purple-800',desc: 'Explores new topics'       },
-  xquad:       { label: 'xQuAD',       color: 'bg-orange-100 text-orange-800',desc: 'Fair category coverage'    },
+  baseline:  { label: 'Baseline',  desc: 'Pure relevance — no diversity adjustment' },
+  composite: { label: 'Composite', desc: 'All four diversity dimensions active simultaneously: embedding variety, calibration toward your interests, serendipitous exploration, and popularity fairness — each weighted by the sliders.' },
+  // legacy method names kept for fallback
+  mmr:         { label: 'MMR',         desc: 'Balanced: relevance + category diversity'        },
+  calibrated:  { label: 'Calibrated',  desc: 'Matches your reading history distribution'       },
+  serendipity: { label: 'Serendipity', desc: 'Explores new topics beyond your usual interests' },
+  xquad:       { label: 'xQuAD',       desc: 'Fair proportional category coverage'             },
 }
 
-const SUB_SLIDER_META = [
-  {
-    key: 'calibration',
-    label: 'Calibration',
-    tooltip: 'Match my reading history',
-    icon: '⚖️',
-  },
-  {
-    key: 'serendipity',
-    label: 'Serendipity',
-    tooltip: 'Surprise me with new topics',
-    icon: '✨',
-  },
-  {
-    key: 'fairness',
-    label: 'Fairness',
-    tooltip: 'Proportional category coverage',
-    icon: '⚡',
-  },
+const SUB_SLIDERS = [
+  { key: 'calibration', label: 'Calibration', tooltip: 'Match my reading history'         },
+  { key: 'serendipity', label: 'Serendipity', tooltip: 'Surprise me with new topics'      },
+  { key: 'fairness',    label: 'Fairness',    tooltip: 'Proportional category coverage'   },
 ]
 
-function Slider({ value, onChange, min = 0, max = 1, step = 0.05, label, left, right, color = 'bg-blue-600' }) {
+function Slider({ value, onChange }) {
   return (
-    <div>
-      {label && <div className="text-xs font-medium text-gray-700 mb-1">{label}</div>}
-      <div className="relative">
-        <input
-          type="range"
-          min={min}
-          max={max}
-          step={step}
-          value={value}
-          onChange={e => onChange(parseFloat(e.target.value))}
-          className="slider w-full"
-          style={{
-            background: `linear-gradient(to right, #2563eb ${value * 100}%, #e5e7eb ${value * 100}%)`,
-          }}
-        />
-      </div>
-      {(left || right) && (
-        <div className="flex justify-between text-xs text-gray-400 mt-1">
-          <span>{left}</span>
-          <span>{right}</span>
-        </div>
-      )}
-    </div>
+    <input
+      type="range"
+      min={0} max={1} step={0.05}
+      value={value}
+      onChange={e => onChange(parseFloat(e.target.value))}
+      className="slider w-full"
+      style={{
+        background: `linear-gradient(to right, #1a3a5c ${value * 100}%, #c9b99a ${value * 100}%)`,
+      }}
+    />
   )
 }
 
 export default function DiversitySidebar({ sliders, activeMethod, onChange }) {
   const method = METHOD_META[activeMethod] ?? METHOD_META.mmr
-  const showSubSliders = sliders.main_diversity >= 0.1
+  const showSub = sliders.main_diversity >= 0.1
 
   function update(key, val) {
     onChange({ ...sliders, [key]: val })
   }
 
   return (
-    <div className="card p-4 space-y-5">
-      <div className="flex items-center justify-between">
-        <h2 className="text-sm font-semibold text-gray-900">🎛️ Controls</h2>
-        <span className={`badge text-xs ${method.color}`} title={method.desc}>
-          {method.label}
-        </span>
+    <div className="border border-rule bg-white p-4 space-y-4">
+      {/* Header */}
+      <div>
+        <div className="section-rule mb-2" />
+        <div className="flex items-center justify-between">
+          <h2 className="text-xs font-bold uppercase tracking-widest text-ink">Controls</h2>
+          <span className="text-xs font-bold uppercase tracking-wider text-masthead border border-masthead px-1.5 py-0.5">
+            {method.label}
+          </span>
+        </div>
       </div>
 
       {/* Main accuracy ↔ diversity slider */}
       <div>
-        <Slider
-          value={sliders.main_diversity}
-          onChange={val => update('main_diversity', val)}
-          left="Accuracy"
-          right="Diversity"
-        />
-        <div className="text-xs text-center text-gray-400 mt-1">
-          {sliders.main_diversity < 0.15
-            ? 'Accuracy-focused'
+        <div className="flex justify-between text-xs text-ink-light mb-1.5">
+          <span className="font-medium">Accuracy</span>
+          <span className="font-medium">Diversity</span>
+        </div>
+        <Slider value={sliders.main_diversity} onChange={val => update('main_diversity', val)} />
+        <p className="text-xs text-ink-light mt-1 text-center">
+          {sliders.main_diversity < 0.05
+            ? 'Baseline — pure relevance ranking'
             : sliders.main_diversity > 0.75
             ? 'Maximum diversity'
             : 'Balanced'}
-        </div>
+        </p>
       </div>
 
       {/* Sub-sliders */}
-      {showSubSliders && (
-        <div className="space-y-4 pt-2 border-t border-gray-100">
-          <p className="text-xs text-gray-400 font-medium uppercase tracking-wide">Diversity Mode</p>
-          {SUB_SLIDER_META.map(meta => (
+      {showSub && (
+        <div className="space-y-3 pt-2 border-t border-rule">
+          <p className="text-xs uppercase tracking-widest text-ink-light font-medium">Diversity Mode</p>
+          {SUB_SLIDERS.map(meta => (
             <div key={meta.key}>
               <div className="flex items-center justify-between mb-1">
-                <span className="text-xs font-medium text-gray-700">
-                  {meta.icon} {meta.label}
-                </span>
-                <span className="text-xs text-gray-400" title={meta.tooltip}>
+                <span className="text-xs font-medium text-ink">{meta.label}</span>
+                <span className="text-xs text-ink-light">
                   {(sliders[meta.key] * 100).toFixed(0)}%
                 </span>
               </div>
-              <input
-                type="range"
-                min={0}
-                max={1}
-                step={0.05}
-                value={sliders[meta.key]}
-                onChange={e => update(meta.key, parseFloat(e.target.value))}
-                className="slider w-full"
-                title={meta.tooltip}
-                style={{
-                  background: `linear-gradient(to right, #2563eb ${sliders[meta.key] * 100}%, #e5e7eb ${sliders[meta.key] * 100}%)`,
-                }}
-              />
-              <p className="text-xs text-gray-400 mt-0.5">{meta.tooltip}</p>
+              <Slider value={sliders[meta.key]} onChange={val => update(meta.key, val)} />
+              <p className="text-xs text-ink-light mt-0.5">{meta.tooltip}</p>
             </div>
           ))}
         </div>
       )}
 
-      {/* Active algorithm explanation */}
-      <div className="bg-gray-50 rounded-lg p-3 text-xs text-gray-500 leading-relaxed">
-        <span className="font-medium text-gray-700">{method.label}:</span> {method.desc}
+      {/* Algorithm description */}
+      <div className="border-t border-rule pt-3">
+        <p className="text-xs text-ink-light leading-relaxed">
+          <span className="font-semibold text-ink">{method.label}:</span> {method.desc}
+        </p>
       </div>
     </div>
   )

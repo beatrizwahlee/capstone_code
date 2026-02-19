@@ -1,91 +1,99 @@
-const CATEGORY_STYLES = {
-  sports:        { bg: 'bg-blue-100',   text: 'text-blue-800'   },
-  health:        { bg: 'bg-green-100',  text: 'text-green-800'  },
-  politics:      { bg: 'bg-red-100',    text: 'text-red-800'    },
-  technology:    { bg: 'bg-indigo-100', text: 'text-indigo-800' },
-  finance:       { bg: 'bg-amber-100',  text: 'text-amber-800'  },
-  entertainment: { bg: 'bg-pink-100',   text: 'text-pink-800'   },
-  travel:        { bg: 'bg-cyan-100',   text: 'text-cyan-800'   },
-  science:       { bg: 'bg-orange-100', text: 'text-orange-800' },
-  foodanddrink:  { bg: 'bg-lime-100',   text: 'text-lime-800'   },
-  lifestyle:     { bg: 'bg-rose-100',   text: 'text-rose-800'   },
-  autos:         { bg: 'bg-slate-100',  text: 'text-slate-800'  },
-  weather:       { bg: 'bg-sky-100',    text: 'text-sky-800'    },
+const CAT_DISPLAY = {
+  sports: 'Sports', health: 'Health', technology: 'Technology',
+  politics: 'Politics', finance: 'Finance', entertainment: 'Entertainment',
+  travel: 'Travel', science: 'Science', foodanddrink: 'Food & Drink',
+  lifestyle: 'Lifestyle', autos: 'Autos', weather: 'Weather',
 }
 
-const DEFAULT_STYLE = { bg: 'bg-gray-100', text: 'text-gray-700' }
-
-const SCORE_COLORS = [
-  { min: 0.8, bar: 'from-emerald-400 to-emerald-600' },
-  { min: 0.6, bar: 'from-blue-400 to-blue-600'       },
-  { min: 0.4, bar: 'from-amber-400 to-amber-600'     },
-  { min: 0.0, bar: 'from-gray-300 to-gray-400'       },
-]
-
-function scoreMeta(score) {
-  const entry = SCORE_COLORS.find(e => score >= e.min) ?? SCORE_COLORS[SCORE_COLORS.length - 1]
-  return entry.bar
+const CAT_COLORS = {
+  sports:        'text-blue-800 border-blue-300',
+  health:        'text-green-800 border-green-300',
+  technology:    'text-indigo-800 border-indigo-300',
+  politics:      'text-red-800 border-red-300',
+  finance:       'text-amber-800 border-amber-300',
+  entertainment: 'text-pink-800 border-pink-300',
+  travel:        'text-cyan-800 border-cyan-300',
+  science:       'text-orange-800 border-orange-300',
+  foodanddrink:  'text-lime-800 border-lime-300',
+  lifestyle:     'text-rose-800 border-rose-300',
+  autos:         'text-slate-700 border-slate-300',
+  weather:       'text-sky-800 border-sky-300',
 }
 
-export default function ArticleCard({ article, rank, alreadyRead, onRead }) {
+const DEFAULT_CAT_COLOR = 'text-gray-700 border-gray-300'
+
+export default function ArticleCard({ article, rank, alreadyRead, onRead, onOpen, featured = false }) {
   const { news_id, title, category, subcategory, abstract, score } = article
-  const catStyle = CATEGORY_STYLES[category] ?? DEFAULT_STYLE
-  const excerpt = abstract ? abstract.slice(0, 180) + (abstract.length > 180 ? '…' : '') : ''
-  const barColor = scoreMeta(score)
+  const catLabel = CAT_DISPLAY[category] ?? category.toUpperCase()
+  const catColor = CAT_COLORS[category] ?? DEFAULT_CAT_COLOR
   const pct = Math.round(score * 100)
+  const excerpt = abstract
+    ? abstract.slice(0, 180) + (abstract.length > 180 ? '…' : '')
+    : ''
 
   return (
-    <article className={`card p-5 transition-all duration-200 hover:shadow-md ${alreadyRead ? 'opacity-75' : ''}`}>
-      {/* Top row: badge + score */}
-      <div className="flex items-center justify-between mb-3">
-        <div className="flex items-center gap-2">
-          <span className={`badge ${catStyle.bg} ${catStyle.text}`}>
-            {category}
-          </span>
-          {subcategory && (
-            <span className="text-xs text-gray-400 capitalize">{subcategory}</span>
-          )}
-        </div>
-        <div className="flex items-center gap-1.5 text-xs text-gray-500">
-          <span className="text-amber-500">★</span>
-          <span className="font-medium">{score.toFixed(2)}</span>
-        </div>
+    <article
+      className={`article-tile group cursor-pointer transition-all hover:shadow-md
+                  ${alreadyRead ? 'opacity-60' : ''}
+                  px-4 py-4`}
+      onClick={() => onOpen && onOpen(article)}
+    >
+      {/* Section tag */}
+      <div className={`inline-flex items-center gap-1.5 mb-2 border-b ${catColor} pb-0.5`}>
+        <span className={`text-xs font-bold uppercase tracking-widest ${catColor.split(' ')[0]}`}>
+          {catLabel}
+        </span>
+        {subcategory && (
+          <span className="text-xs text-ink-light capitalize">· {subcategory}</span>
+        )}
+        {alreadyRead && (
+          <span className="text-xs text-ink-light">· Read</span>
+        )}
       </div>
 
-      {/* Score bar */}
-      <div className="h-1 w-full bg-gray-100 rounded-full mb-3 overflow-hidden">
-        <div
-          className={`h-full rounded-full bg-gradient-to-r ${barColor} transition-all duration-500`}
-          style={{ width: `${pct}%` }}
-        />
-      </div>
-
-      {/* Title */}
-      <h2 className="text-base font-semibold text-gray-900 leading-snug mb-2 line-clamp-2">
+      {/* Headline */}
+      <h2 className="font-headline font-bold text-ink leading-snug mb-2 text-base md:text-lg
+                     group-hover:underline decoration-1 underline-offset-2">
         {title}
       </h2>
 
       {/* Excerpt */}
       {excerpt && (
-        <p className="text-sm text-gray-500 leading-relaxed mb-4 line-clamp-3">
+        <p className="text-xs text-ink-light leading-relaxed mb-3 flex-1">
           {excerpt}
         </p>
       )}
 
-      {/* Footer */}
+      {/* Footer: relevance + actions */}
       <div className="flex items-center justify-between">
-        <span className="text-xs text-gray-300">#{rank}</span>
-        <button
-          onClick={() => onRead(news_id)}
-          disabled={alreadyRead}
-          className={`text-sm font-medium px-4 py-1.5 rounded-lg transition-colors ${
-            alreadyRead
-              ? 'bg-gray-100 text-gray-400 cursor-not-allowed'
-              : 'bg-blue-600 text-white hover:bg-blue-700 active:bg-blue-800'
-          }`}
-        >
-          {alreadyRead ? '✓ Read' : 'Read →'}
-        </button>
+        <div className="flex items-center gap-3">
+          {/* Thin relevance bar */}
+          <div className="w-16 h-0.5 bg-rule overflow-hidden">
+            <div
+              className="h-full bg-masthead transition-all duration-500"
+              style={{ width: `${pct}%` }}
+            />
+          </div>
+          <span className="text-xs text-ink-light">{pct}% match</span>
+        </div>
+
+        <div className="flex items-center gap-2" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => onOpen && onOpen(article)}
+            className="text-xs text-masthead hover:underline underline-offset-2 font-medium"
+          >
+            Read →
+          </button>
+          {!alreadyRead && (
+            <button
+              onClick={() => onRead(news_id)}
+              className="text-xs text-ink-light hover:text-ink border-l border-rule pl-2"
+              title="Mark as read without opening"
+            >
+              ✓
+            </button>
+          )}
+        </div>
       </div>
     </article>
   )
