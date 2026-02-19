@@ -19,7 +19,7 @@ Missing entities: 1427
 4. CATEGORY BALANCE
 ----------------------------------------
 Imbalance ratio: 32020.00
-Gini coefficient: -0.610
+Gini coefficient: -0.610  [NOTE: computed with old buggy formula — re-run pipeline for correct value]
 
 5. INTERACTION QUALITY
 ----------------------------------------

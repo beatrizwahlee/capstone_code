@@ -5,7 +5,7 @@
 # Step 1: install dependencies
 pip install -r requirements_phase1.txt
 
-# Step 2: run (expects your processed_data_v2/ and MINDlarge_train/ in current dir)
+# Step 2: run (expects your processed_data/ and MINDlarge_train/ in current dir)
 python run_phase1_encoding.py
 
 # Optional: override paths without editing the file

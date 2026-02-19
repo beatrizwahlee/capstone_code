@@ -43,7 +43,7 @@ phase2_path = base_dir.parent / "Phase2_baseline_rec"
 if phase2_path.exists():
     sys.path.insert(0, str(phase2_path))
 
-phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing_v1"
+phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing"
 if phase0_path.exists():
     sys.path.insert(0, str(phase0_path))
 

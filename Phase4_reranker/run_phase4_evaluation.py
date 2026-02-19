@@ -51,7 +51,7 @@ phase1_path = base_dir.parent / "Phase1_NLP_encoding"
 if phase1_path.exists():
     sys.path.insert(0, str(phase1_path))
 
-phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing_v1"
+phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing"
 if phase0_path.exists():
     sys.path.insert(0, str(phase0_path))
 
@@ -320,7 +320,7 @@ def main():
     )
     
     logger.info("Loading news metadata ...")
-    processed_dir = Path(CONFIG["baseline_dir"]).parent.parent.parent / "Phase0_data_processing" / "processed_data_v2"
+    processed_dir = Path(CONFIG["baseline_dir"]).parent.parent.parent / "Phase0_data_processing" / "processed_data"
     news_df = pd.read_csv(processed_dir / "news_features_train.csv")
     
     logger.info("Loading validation data ...")

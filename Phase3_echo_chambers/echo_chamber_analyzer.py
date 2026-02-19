@@ -127,7 +127,7 @@ class EchoChamberAnalyzer:
         news_df = recommender.news_metadata
         if news_df is None:
             # Try to load from processed data
-            processed_dir = baseline_dir.parent.parent.parent / "Phase0_data_processing" / "processed_data_v2"
+            processed_dir = baseline_dir.parent.parent.parent / "Phase0_data_processing" / "processed_data"
             news_path = processed_dir / "news_features_train.csv"
             if news_path.exists():
                 news_df = pd.read_csv(news_path)

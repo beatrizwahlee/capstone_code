@@ -41,7 +41,7 @@ base_dir = Path(__file__).resolve().parent
 phase1_path = base_dir.parent / "Phase1_NLP_encoding"
 if phase1_path.exists():
     sys.path.insert(0, str(phase1_path))
-phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing_v1"
+phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing"
 if phase0_path.exists():
     sys.path.insert(0, str(phase0_path))
 
@@ -60,7 +60,7 @@ CONFIG = {
     "embeddings_dir": str(base_dir.parent / "Phase1_NLP_encoding" / "embeddings"),
     
     # Phase 0 processed data directory
-    "processed_data_dir": str(base_dir.parent / "Phase0_data_processing" / "processed_data_v2"),
+    "processed_data_dir": str(base_dir.parent / "Phase0_data_processing" / "processed_data"),
     
     # Raw MIND data (for loading behaviors if processed data missing)
     "train_data_dir": str(base_dir.parent / "MINDlarge_train"),
@@ -69,11 +69,15 @@ CONFIG = {
     # Output directory
     "output_dir": str(base_dir / "outputs" / "baseline"),
     
-    # Hybrid scoring weights
+    # Hybrid scoring weights (overridden at runtime by dynamic weighting)
     "content_weight": 0.6,
     "popularity_weight": 0.2,
     "recency_weight": 0.2,
-    
+
+    # Multi-query FAISS: candidates retrieved per query vector
+    # Query 1 = pool_size, Query 2 = pool_size//2, Query 3 = pool_size//3
+    "candidate_pool_size": 150,
+
     # User profiler decay
     "decay_lambda": 0.3,
     
@@ -89,51 +93,78 @@ CONFIG = {
 
 def load_train_interactions(processed_dir: Path, raw_dir: Path) -> List[Dict]:
     """
-    Load training interactions from Phase 0 processed data.
-    
+    Load training interactions from the full raw MIND behaviors file.
+
+    Prefers raw data over the 1000-row sample CSV so popularity scores
+    are fitted on the complete training set. Adds 'impression_time' so
+    fit_popularity() can compute per-article recency scores.
+
     Returns:
-        List of dicts with keys: news_id, label, user_id, history
+        List of dicts with keys: news_id, label, user_id, history,
+                                 impression_time (datetime | None)
     """
+    from datetime import datetime
+
     logger.info("Loading training interactions ...")
-    
-    # Try processed CSV first
+
+    # Primary: full raw MIND behaviors (all impressions + timestamps)
+    behaviors_path = raw_dir / "behaviors.tsv"
+    if raw_dir.exists() and behaviors_path.exists():
+        logger.info(f"  Loading from raw MIND data (full dataset): {raw_dir}")
+        from mind_data_loader import MINDDataLoader
+
+        loader = MINDDataLoader(str(raw_dir), dataset_type='train')
+        loader.load_all_data()
+
+        interactions = []
+        for _, row in loader.behaviors_df.iterrows():
+            impression_time = None
+            try:
+                impression_time = datetime.strptime(row['time'], '%m/%d/%Y %I:%M:%S %p')
+            except (ValueError, KeyError, TypeError):
+                pass
+
+            history = row['history']
+            for news_id, label in row['impressions']:
+                interactions.append({
+                    'news_id': news_id,
+                    'label': label,
+                    'user_id': row['user_id'],
+                    'history': history,
+                    'impression_time': impression_time,
+                })
+
+        logger.info(f"  Loaded {len(interactions):,} training interactions from raw data")
+        return interactions
+
+    # Fallback: 1000-row sample CSV (raw data unavailable)
     train_path = processed_dir / "sample_train_interactions.csv"
-    
     if train_path.exists():
-        logger.info(f"  Loading from {train_path}")
+        logger.warning(
+            f"  Raw MIND data not found at {raw_dir}. "
+            f"Falling back to sample CSV (popularity will be approximate)."
+        )
         df = pd.read_csv(train_path)
-        
-        # Parse history column if it's a string
+
         if 'history' in df.columns and isinstance(df['history'].iloc[0], str):
             import ast
             df['history'] = df['history'].apply(
                 lambda x: ast.literal_eval(x) if isinstance(x, str) else x
             )
-        
+
         interactions = df.to_dict('records')
-        logger.info(f"  Loaded {len(interactions):,} training interactions")
+        # Add missing impression_time so fit_popularity() doesn't break
+        for rec in interactions:
+            rec.setdefault('impression_time', None)
+
+        logger.info(f"  Loaded {len(interactions):,} training interactions (sample only)")
         return interactions
-    
-    # Fall back to loading from raw MIND behaviors
-    logger.warning(f"  Processed interactions not found, loading from raw data ...")
-    from mind_data_loader import MINDDataLoader
-    
-    loader = MINDDataLoader(str(raw_dir), dataset_type='train')
-    loader.load_all_data()
-    
-    interactions = []
-    for _, row in loader.behaviors_df.iterrows():
-        history = row['history']
-        for news_id, label in row['impressions']:
-            interactions.append({
-                'news_id': news_id,
-                'label': label,
-                'user_id': row['user_id'],
-                'history': history,
-            })
-    
-    logger.info(f"  Loaded {len(interactions):,} training interactions from raw data")
-    return interactions
+
+    logger.error(
+        f"No training data found. Expected raw behaviors at {behaviors_path} "
+        f"or sample CSV at {train_path}."
+    )
+    sys.exit(1)
 
 
 def load_test_data(processed_dir: Path, raw_dir: Path, max_samples: Optional[int] = None) -> List[Dict]:
@@ -146,7 +177,7 @@ def load_test_data(processed_dir: Path, raw_dir: Path, max_samples: Optional[int
     logger.info("Loading test data ...")
     
     # Try to load from raw validation directory
-    # (processed_data_v2 typically only has training interactions)
+    # (processed_data typically only has training interactions)
     from mind_data_loader import MINDDataLoader
     
     loader = MINDDataLoader(str(raw_dir), dataset_type='valid')
@@ -209,6 +240,7 @@ def train_baseline(train_interactions: List[Dict], news_df: pd.DataFrame) -> Bas
         popularity_weight=CONFIG["popularity_weight"],
         recency_weight=CONFIG["recency_weight"],
         decay_lambda=CONFIG["decay_lambda"],
+        candidate_pool_size=CONFIG["candidate_pool_size"],
     )
     
     # Fit popularity scores from training data

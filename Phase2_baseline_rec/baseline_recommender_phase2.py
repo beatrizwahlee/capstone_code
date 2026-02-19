@@ -11,13 +11,24 @@ Architecture:
   
   Step 1: Load Phase 1 embeddings from disk (~2 seconds)
   
-  Step 2: Build user profile using AttentionUserProfiler
-          (recency-weighted, content-aware aggregation)
-  
-  Step 3: Retrieve top-100 candidates from FAISS index (<1 ms)
-  
-  Step 4: Hybrid scoring:
-          score = 0.6 × content_sim + 0.2 × popularity + 0.2 × recency
+  Step 2: Build three user profiles using AttentionUserProfiler
+          - recency-weighted (primary, attention-scored)
+          - uniform-weighted (mean of all clicks)
+          - recent-5 (most recent 5 clicks)
+          Content scores = 0.6 × recency + 0.3 × uniform + 0.1 × recent, then min-max normalized
+
+  Step 3: Multi-query FAISS retrieval (<5 ms)
+          - Query 1: recency-weighted profile  → top-150 candidates
+          - Query 2: uniform-weighted profile  → top-75  candidates
+          - Query 3: recent-clicks profile     → top-50  candidates
+          → Union: up to ~200 unique candidates
+
+  Step 4: Hybrid scoring with dynamic weights (content scores are pre-normalized to [0,1]):
+          Short history  (≤3):  0.28 × content + 0.27 × popularity + 0.10 × recency + 0.15 × affinity + 0.20 × cf
+          Medium history (≤10): 0.35 × content + 0.15 × popularity + 0.10 × recency + 0.20 × affinity + 0.20 × cf
+          Long history   (>10): 0.38 × content + 0.07 × popularity + 0.10 × recency + 0.25 × affinity + 0.20 × cf
+          (affinity = user's normalized category click distribution; 0.0 if category map unavailable)
+          (cf = item-item co-click collaborative filtering signal)
   
   Step 5: Return top-K recommendations
 
@@ -61,6 +72,15 @@ from sklearn.metrics import roc_auc_score
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+
+# Ensure Phase 1 package is importable when this module is run directly
+base_dir = Path(__file__).resolve().parent
+phase1_path = base_dir.parent / "Phase1_NLP_encoding"
+if phase1_path.exists():
+    import sys
+    if str(phase1_path) not in sys.path:
+        sys.path.insert(0, str(phase1_path))
 
 
 # ---------------------------------------------------------------------------
@@ -108,14 +128,16 @@ class BaselineRecommender:
         popularity_weight: float = 0.2,
         recency_weight: float = 0.2,
         decay_lambda: float = 0.3,
+        candidate_pool_size: int = 150,
     ):
         """
         Args:
             embeddings_dict:    Output from load_phase1_embeddings()
-            content_weight:     Weight for content similarity (cosine)
-            popularity_weight:  Weight for popularity score
+            content_weight:     Base weight for content similarity (overridden dynamically)
+            popularity_weight:  Base weight for popularity score (overridden dynamically)
             recency_weight:     Weight for recency score
             decay_lambda:       Recency decay rate for user profiler
+            candidate_pool_size: FAISS candidates retrieved per query vector
         """
         self.encoder = embeddings_dict['encoder']
         self.final_embeddings = embeddings_dict['final_embeddings']
@@ -123,23 +145,32 @@ class BaselineRecommender:
         self.news_id_to_idx = embeddings_dict['news_id_to_idx']
         self.retriever = embeddings_dict['retriever']
         
-        # Hybrid scoring weights
+        # Base hybrid scoring weights (dynamic weighting overrides at recommend time)
         self.content_weight = content_weight
         self.popularity_weight = popularity_weight
         self.recency_weight = recency_weight
-        
+
+        # Multi-query FAISS pool size per query vector
+        self.candidate_pool_size = candidate_pool_size
+
         # User profiler
         from nlp_encoder import AttentionUserProfiler
         self.profiler = AttentionUserProfiler(decay_lambda=decay_lambda)
         
         # Popularity scores (will be computed from training data)
         self.popularity_scores: Dict[str, float] = {}
-        
+
         # Recency scores (days since publication — needs news metadata)
         self.recency_scores: Dict[str, float] = {}
-        
+
+        # Category affinity: news_id → category string (built from news_df in fit_popularity)
+        self.news_id_to_category: Dict[str, str] = {}
+
         # News metadata (for diversity metrics)
         self.news_metadata: Optional[pd.DataFrame] = None
+
+        # Co-click index for collaborative filtering (built from training data)
+        self.co_click: Dict[str, Dict[str, float]] = {}
     
     @classmethod
     def from_embeddings(cls, embeddings_dir: str, **kwargs) -> "BaselineRecommender":
@@ -190,12 +221,147 @@ class BaselineRecommender:
         
         logger.info(f"  Popularity scores computed for {len(self.popularity_scores):,} articles")
         logger.info(f"  Articles with clicks: {len(click_counts):,}")
-        
-        # Store news metadata if provided
+
+        # ---- Recency scores from impression timestamps ----
+        # Each article's recency = how recently it was seen in training impressions.
+        # Articles whose latest impression timestamp is closest to the end of the
+        # training window get the highest recency score (→ 1.0).
+        news_last_seen: Dict[str, object] = {}
+        for interaction in train_interactions:
+            t = interaction.get('impression_time')
+            if t is None:
+                continue
+            nid = interaction['news_id']
+            if nid not in news_last_seen or t > news_last_seen[nid]:
+                news_last_seen[nid] = t
+
+        if news_last_seen:
+            ts_values = [t.timestamp() for t in news_last_seen.values()]
+            min_ts = min(ts_values)
+            max_ts = max(ts_values)
+            ts_range = max_ts - min_ts if max_ts > min_ts else 1.0
+
+            self.recency_scores = {}
+            for news_id in self.news_ids:
+                if news_id in news_last_seen:
+                    elapsed = news_last_seen[news_id].timestamp() - min_ts
+                    self.recency_scores[news_id] = elapsed / ts_range  # [0, 1]
+                else:
+                    self.recency_scores[news_id] = 0.0  # never seen → least recent
+
+            logger.info(
+                f"  Recency scores computed from {len(news_last_seen):,} timestamped articles "
+                f"({len(self.recency_scores):,} scored)"
+            )
+        else:
+            logger.warning(
+                "  No impression timestamps found — recency_scores not populated. "
+                "All articles will default to 0.5 at recommendation time."
+            )
+
+        # Store news metadata and build category mapping
         if news_df is not None:
             self.news_metadata = news_df
+            if 'news_id' in news_df.columns and 'category' in news_df.columns:
+                self.news_id_to_category = dict(
+                    zip(news_df['news_id'], news_df['category'].fillna(''))
+                )
+                logger.info(
+                    f"  Category mapping built for {len(self.news_id_to_category):,} articles "
+                    f"({news_df['category'].nunique()} unique categories)"
+                )
             logger.info(f"  News metadata loaded: {len(news_df):,} articles")
-    
+
+        logger.info("Building co-click index ...")
+        self._build_co_click_index(train_interactions)
+
+    # ------------------------------------------------------------------
+    # Helper methods for multi-query retrieval and dynamic weighting
+    # ------------------------------------------------------------------
+
+    def _build_uniform_profile(self, history: List[str]) -> Optional[np.ndarray]:
+        """Mean (uniform-weight) user profile — treats all clicks equally."""
+        valid_ids = [nid for nid in history if nid in self.news_id_to_idx]
+        if not valid_ids:
+            return None
+        indices = [self.news_id_to_idx[nid] for nid in valid_ids]
+        vecs = self.final_embeddings[indices]
+        mean_vec = vecs.mean(axis=0)
+        norm = np.linalg.norm(mean_vec)
+        return (mean_vec / norm).astype(np.float32) if norm > 1e-10 else mean_vec.astype(np.float32)
+
+    def _build_recent_profile(self, history: List[str], n_recent: int = 5) -> Optional[np.ndarray]:
+        """Profile built from only the most recent N clicks."""
+        return self._build_uniform_profile(history[-n_recent:])
+
+    def _get_dynamic_weights(self, history_len: int) -> Tuple[float, float, float, float, float]:
+        """
+        Return (content_w, popularity_w, recency_w, affinity_w, cf_w) adapted to history length.
+
+        CF weight is fixed at 0.20 (global co-click signal, equally useful at all history lengths).
+        - Short history (≤3):   lean on popularity; affinity unreliable with so few clicks
+        - Medium history (≤10): balanced blend; affinity starts to carry real signal
+        - Long history   (>10): trust content + affinity most; popularity matters least
+        """
+        cf_w = 0.20
+        if not self.news_id_to_category:
+            # No category map available — fall back to 3-component weights (+ CF)
+            if history_len <= 3:
+                return 0.33, 0.32, 0.15, 0.00, cf_w
+            elif history_len <= 10:
+                return 0.43, 0.22, 0.15, 0.00, cf_w
+            else:
+                return 0.48, 0.12, 0.20, 0.00, cf_w
+
+        if history_len <= 3:
+            return 0.28, 0.27, 0.10, 0.15, cf_w
+        elif history_len <= 10:
+            return 0.35, 0.15, 0.10, 0.20, cf_w
+        else:
+            return 0.38, 0.07, 0.10, 0.25, cf_w
+
+    def _build_co_click_index(
+        self, train_interactions: List[Dict], top_k: int = 50
+    ):
+        """
+        Build item-item co-click index from training interactions.
+
+        For each user, all confirmed prior clicks (from 'history' field) are used.
+        Co-click counts are normalized per article and top-k co-articles are kept.
+
+        Args:
+            train_interactions: List of interaction dicts (same as passed to fit_popularity)
+            top_k:              Max co-clicked articles to keep per article (memory control)
+        """
+        raw: Dict[str, Counter] = defaultdict(Counter)
+
+        seen_users: set = set()
+        for interaction in train_interactions:
+            uid = interaction.get('user_id', '')
+            if not uid or uid in seen_users:
+                continue
+            seen_users.add(uid)
+            known = [
+                nid for nid in (interaction.get('history') or [])
+                if nid in self.news_id_to_idx
+            ]
+            for i, a in enumerate(known):
+                for b in known[i + 1:]:
+                    raw[a][b] += 1
+                    raw[b][a] += 1
+
+        # Normalize and keep top-k per article
+        for article, co_counts in raw.items():
+            max_count = max(co_counts.values())
+            top = co_counts.most_common(top_k)
+            self.co_click[article] = {
+                b: cnt / max_count for b, cnt in top
+            }
+        logger.info(
+            f"  Co-click index built: {len(self.co_click):,} articles "
+            f"({len(seen_users):,} users processed)"
+        )
+
     def recommend(
         self,
         user_history: List[str],
@@ -205,71 +371,138 @@ class BaselineRecommender:
     ) -> List[Tuple[str, float]]:
         """
         Generate top-K recommendations for a user.
-        
+
+        When candidates is None (production mode):
+          - Builds three query vectors and unions their FAISS results for a
+            richer, more diverse candidate pool.
+          - Applies dynamic scoring weights based on history length.
+
+        When candidates is provided (evaluation mode):
+          - Scores the given fixed candidate list (no FAISS call needed).
+          - Dynamic weights still apply.
+
         Args:
-            user_history:      List of clicked news IDs (chronological)
-            k:                 Number of recommendations
-            exclude_history:   Remove history items from recommendations
-            candidates:        Optional pre-filtered candidate list
-                               (if None, retrieves top-100 from FAISS)
-        
+            user_history:    List of clicked news IDs (chronological order)
+            k:               Number of recommendations to return
+            exclude_history: Remove history items from the output
+            candidates:      Optional fixed candidate list (evaluation mode)
+
         Returns:
-            List of (news_id, score) tuples, sorted by score descending
+            List of (news_id, score) tuples, sorted descending by score
         """
         if not user_history:
-            # Cold start: return most popular items
             return self._cold_start_recommend(k)
-        
-        # Build user profile
-        user_profile = self.profiler.build_profile(
+
+        # Dynamic weights based on how much history we have
+        content_w, pop_w, recency_w, affinity_w, cf_w = self._get_dynamic_weights(len(user_history))
+
+        # Build all three user profiles (used for both FAISS retrieval and content scoring)
+        recency_profile = self.profiler.build_profile(
             history_ids=user_history,
             news_embeddings=self.final_embeddings,
             news_id_to_idx=self.news_id_to_idx,
             max_history=50,
         )
-        
-        # Retrieve candidates
+        uniform_profile = self._build_uniform_profile(user_history)
+        recent_profile = self._build_recent_profile(user_history, n_recent=5)
+
         if candidates is None:
-            # Use FAISS to get top-100 by content similarity
+            # ---- Multi-query FAISS retrieval ----
             exclude_ids = user_history if exclude_history else None
-            candidate_ids, content_scores = self.retriever.retrieve(
-                query_vector=user_profile,
-                k=100,
+            candidate_set: set = set()
+
+            # Query 1: recency-weighted profile (primary — largest pool)
+            pool = self.candidate_pool_size
+            cids1, _ = self.retriever.retrieve(
+                query_vector=recency_profile,
+                k=pool,
                 exclude_ids=exclude_ids,
             )
+            candidate_set.update(cids1)
+
+            # Query 2: uniform-weighted profile (catches items recency-profile misses)
+            if uniform_profile is not None:
+                cids2, _ = self.retriever.retrieve(
+                    query_vector=uniform_profile,
+                    k=pool // 2,
+                    exclude_ids=exclude_ids,
+                )
+                candidate_set.update(cids2)
+
+            # Query 3: recent-clicks profile (boosts fresh interests)
+            if len(user_history) > 5 and recent_profile is not None:
+                cids3, _ = self.retriever.retrieve(
+                    query_vector=recent_profile,
+                    k=pool // 3,
+                    exclude_ids=exclude_ids,
+                )
+                candidate_set.update(cids3)
+
+            candidate_ids = [cid for cid in candidate_set if cid in self.news_id_to_idx]
+            if not candidate_ids:
+                return self._cold_start_recommend(k)
+
         else:
+            # ---- Evaluation mode: score fixed impression candidates ----
             candidate_ids = [
                 cid for cid in candidates
-                if cid in self.news_id_to_idx  # Filter unknown articles
+                if cid in self.news_id_to_idx
                 and ((not exclude_history) or (cid not in user_history))
             ]
-            
             if not candidate_ids:
-                # All candidates filtered out — return empty
                 return []
-            
-            # Score them
-            candidate_embeddings = np.array([
-                self.final_embeddings[self.news_id_to_idx[cid]]
-                for cid in candidate_ids
-            ])
-            content_scores = (candidate_embeddings @ user_profile).astype(np.float32)
-        
-        # Hybrid scoring
+
+        # Multi-profile content scoring (applied in both production and eval mode)
+        cand_indices = np.array([self.news_id_to_idx[cid] for cid in candidate_ids])
+        embs = self.final_embeddings[cand_indices]
+        content_scores = (0.6 * (embs @ recency_profile)).astype(np.float32)
+        if uniform_profile is not None:
+            content_scores += 0.3 * (embs @ uniform_profile)
+        if recent_profile is not None:
+            content_scores += 0.1 * (embs @ recent_profile)
+
+        # Min-max normalize content scores into [0, 1] per impression
+        cs_min, cs_max = content_scores.min(), content_scores.max()
+        if cs_max > cs_min:
+            content_scores = (content_scores - cs_min) / (cs_max - cs_min)
+
+        # User category affinity: normalized distribution over categories in click history
+        user_cat_affinity: Dict[str, float] = {}
+        if affinity_w > 0 and self.news_id_to_category:
+            cat_counts: Counter = Counter()
+            for nid in user_history:
+                cat = self.news_id_to_category.get(nid, '')
+                if cat:
+                    cat_counts[cat] += 1
+            total_clicks = sum(cat_counts.values())
+            if total_clicks > 0:
+                user_cat_affinity = {cat: cnt / total_clicks for cat, cnt in cat_counts.items()}
+
+        # CF signal: aggregate co-click votes from user history, normalize by history length
+        history_cf: Dict[str, float] = defaultdict(float)
+        if cf_w > 0 and self.co_click:
+            for hist_id in user_history:
+                for co_article, weight in self.co_click.get(hist_id, {}).items():
+                    history_cf[co_article] += weight
+            if history_cf:
+                max_cf = max(history_cf.values())
+                if max_cf > 0:
+                    for k_id in history_cf:
+                        history_cf[k_id] /= max_cf
+
+        # Hybrid scoring (content + popularity + recency + category affinity + CF)
         final_scores = []
         for i, news_id in enumerate(candidate_ids):
-            content_sim = float(content_scores[i])
-            popularity = self.popularity_scores.get(news_id, 0.0)
-            recency = self.recency_scores.get(news_id, 0.5)  # default mid-range
-            
+            cat = self.news_id_to_category.get(news_id, '')
             score = (
-                self.content_weight * content_sim +
-                self.popularity_weight * popularity +
-                self.recency_weight * recency
+                content_w  * float(content_scores[i]) +
+                pop_w      * self.popularity_scores.get(news_id, 0.0) +
+                recency_w  * self.recency_scores.get(news_id, 0.5) +
+                affinity_w * user_cat_affinity.get(cat, 0.0) +
+                cf_w       * history_cf.get(news_id, 0.0)
             )
             final_scores.append((news_id, score))
-        
-        # Sort and return top-K
+
         final_scores.sort(key=lambda x: x[1], reverse=True)
         return final_scores[:k]
     
@@ -288,32 +521,38 @@ class BaselineRecommender:
             'content_weight': self.content_weight,
             'popularity_weight': self.popularity_weight,
             'recency_weight': self.recency_weight,
+            'candidate_pool_size': self.candidate_pool_size,
             'popularity_scores': self.popularity_scores,
             'recency_scores': self.recency_scores,
             'profiler_lambda': self.profiler.decay_lambda,
+            'news_id_to_category': self.news_id_to_category,
+            'co_click': self.co_click,
         }
         with open(filepath, 'wb') as f:
             pickle.dump(state, f)
         logger.info(f"Recommender saved to {filepath}")
-    
+
     @classmethod
     def load(cls, filepath: str, embeddings_dir: str) -> "BaselineRecommender":
         """Load recommender state from disk."""
         embeddings_dict = load_phase1_embeddings(embeddings_dir)
-        
+
         with open(filepath, 'rb') as f:
             state = pickle.load(f)
-        
+
         obj = cls(
             embeddings_dict,
             content_weight=state['content_weight'],
             popularity_weight=state['popularity_weight'],
             recency_weight=state['recency_weight'],
             decay_lambda=state['profiler_lambda'],
+            candidate_pool_size=state.get('candidate_pool_size', 150),
         )
         obj.popularity_scores = state['popularity_scores']
         obj.recency_scores = state.get('recency_scores', {})
-        
+        obj.news_id_to_category = state.get('news_id_to_category', {})
+        obj.co_click = state.get('co_click', {})
+
         logger.info(f"Recommender loaded from {filepath}")
         return obj
 
@@ -523,8 +762,9 @@ def quick_test():
     logger.info("Quick Test — Baseline Recommender")
     logger.info("=" * 60)
     
-    # Load
-    recommender = BaselineRecommender.from_embeddings('./embeddings')
+    # Load Phase 1 embeddings from the standard Phase 1 directory
+    embeddings_dir = base_dir.parent / "Phase1_NLP_encoding" / "embeddings"
+    recommender = BaselineRecommender.from_embeddings(str(embeddings_dir))
     
     # Mock user history
     mock_history = recommender.news_ids[:10]

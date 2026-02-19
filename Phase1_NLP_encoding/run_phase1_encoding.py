@@ -4,7 +4,7 @@ Phase 1 Run Script — NLP Encoding Pipeline
 Diversity-Aware News Recommender System — Capstone Project
 
 This script drives the full Phase 1 encoding pipeline:
-  1. Load cleaned MIND data (from Phase 0 / processed_data_v2)
+  1. Load cleaned MIND data (from Phase 0 / processed_data)
   2. Encode all news articles with the three-tower encoder
   3. Build the FAISS retrieval index
   4. Run a sanity-check suite to verify embeddings make sense
@@ -40,7 +40,7 @@ base_dir = Path(__file__).resolve().parent
 # ---------------------------------------------------------------------------
 CONFIG = {
     # Where Phase 0 wrote its outputs
-    "processed_data_dir":  "./processed_data_v2",
+    "processed_data_dir":  str(base_dir.parent / "Phase0_data_processing" / "processed_data"),
 
     # Raw MIND directories (needed to reload full news_df + entity embeddings)
     "train_data_dir":  "./MINDlarge_train",   # or ./MINDsmall_train
@@ -51,7 +51,7 @@ CONFIG = {
     # SBERT model to use.
     # "all-MiniLM-L6-v2"       — fast, good quality (recommended for CPU)
     # "allenai/news-roberta-base" — news-domain fine-tuned, ~4× slower, best quality
-    "sbert_model":  "all-MiniLM-L6-v2",
+    "sbert_model":  "all-mpnet-base-v2",
 
     # "cpu" or "cuda" — SBERT will use GPU if available and set to "cuda"
     "device":  "cpu",
@@ -123,9 +123,12 @@ logger = logging.getLogger(__name__)
 
 sys.path.insert(0, str(base_dir))
 
-phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing_v1"
-if phase0_path.exists():
-    sys.path.insert(0, str(phase0_path))
+phase0_paths = [
+    base_dir.parent / "Phase0_data_processing" / "data_processing",
+]
+for p in phase0_paths:
+    if p.exists():
+        sys.path.insert(0, str(p))
 
 from nlp_encoder import (
     NewsEncoderPhase1,
@@ -141,7 +144,7 @@ def load_data():
     """
     Load news_df and entity_embeddings.
 
-    Tries processed_data_v2 first (Phase 0 output).
+    Tries processed_data first (Phase 0 output).
     Falls back to loading directly from the raw MIND directory.
     """
     logger.info("=" * 60)
@@ -290,9 +293,9 @@ def run_sanity_checks(encoder: NewsEncoderPhase1, news_df: pd.DataFrame):
 
     print(f"\n--- Basic Checks ---")
     print(f"  Final embedding shape:  {N:,} × {D}")
-    print(f"  Expected shape:         {N:,} × 532")
-    assert D == 532, f"❌  Dimension mismatch! Got {D}, expected 532"
-    print(f"  ✔ Dimension correct (532)")
+    print(f"  Expected shape:         {N:,} × 916")
+    assert D == 916, f"❌  Dimension mismatch! Got {D}, expected 916"
+    print(f"  ✔ Dimension correct (916)")
 
     norms = np.linalg.norm(embeddings, axis=1)
     print(f"  Norm range: [{norms.min():.6f}, {norms.max():.6f}]  (should be ≈ 1.0)")

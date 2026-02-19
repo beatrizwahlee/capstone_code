@@ -59,10 +59,10 @@ phase1_path = base_dir.parent / "Phase1_NLP_encoding"
 if phase1_path.exists():
     sys.path.insert(0, str(phase1_path))
 
-phase0_path = base_dir.parent / "Phase0_data_processing" / "processed_data_v2"
-legacy_phase0_path = base_dir.parent / "Phase0_data_processing" / "data_processing_v1"
-if legacy_phase0_path.exists():
-    sys.path.insert(0, str(legacy_phase0_path))
+phase0_path = base_dir.parent / "Phase0_data_processing" / "processed_data"
+phase0_code_path = base_dir.parent / "Phase0_data_processing" / "data_processing"
+if phase0_code_path.exists():
+    sys.path.insert(0, str(phase0_code_path))
 
 logger = logging.getLogger(__name__)
 
@@ -97,7 +97,7 @@ def load_system():
     
     embeddings_dir = str(base_dir.parent / "Phase1_NLP_encoding" / "embeddings")
     baseline_path = str(base_dir.parent / "Phase2_baseline_rec" / "outputs" / "baseline" / "baseline_recommender.pkl")
-    news_path = str(base_dir.parent / "Phase0_data_processing" / "processed_data_v2" / "news_features_train.csv")
+    news_path = str(base_dir.parent / "Phase0_data_processing" / "processed_data" / "news_features_train.csv")
     
     baseline = BaselineRecommender.load(baseline_path, embeddings_dir)
     
