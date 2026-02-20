@@ -1,14 +1,6 @@
-const METHOD_META = {
-  baseline:  { label: 'Baseline',  desc: 'Pure relevance — no diversity adjustment' },
-  composite: { label: 'Composite', desc: 'All four diversity dimensions active simultaneously: embedding variety, calibration toward your interests, serendipitous exploration, and popularity fairness — each weighted by the sliders.' },
-  // legacy method names kept for fallback
-  mmr:         { label: 'MMR',         desc: 'Balanced: relevance + category diversity'        },
-  calibrated:  { label: 'Calibrated',  desc: 'Matches your reading history distribution'       },
-  serendipity: { label: 'Serendipity', desc: 'Explores new topics beyond your usual interests' },
-  xquad:       { label: 'xQuAD',       desc: 'Fair proportional category coverage'             },
-}
 
 const SUB_SLIDERS = [
+  { key: 'diversity',   label: 'Diversity',   tooltip: 'Reduce embedding-similar articles clustering together' },
   { key: 'calibration', label: 'Calibration', tooltip: 'Match my reading history'         },
   { key: 'serendipity', label: 'Serendipity', tooltip: 'Surprise me with new topics'      },
   { key: 'fairness',    label: 'Fairness',    tooltip: 'Proportional category coverage'   },
@@ -29,9 +21,8 @@ function Slider({ value, onChange }) {
   )
 }
 
-export default function DiversitySidebar({ sliders, activeMethod, onChange }) {
-  const method = METHOD_META[activeMethod] ?? METHOD_META.mmr
-  const showSub = sliders.main_diversity >= 0.1
+export default function DiversitySidebar({ sliders, onChange }) {
+  const showSub = sliders.main_diversity > 0
 
   function update(key, val) {
     onChange({ ...sliders, [key]: val })
@@ -42,34 +33,28 @@ export default function DiversitySidebar({ sliders, activeMethod, onChange }) {
       {/* Header */}
       <div>
         <div className="section-rule mb-2" />
-        <div className="flex items-center justify-between">
-          <h2 className="text-xs font-bold uppercase tracking-widest text-ink">Controls</h2>
-          <span className="text-xs font-bold uppercase tracking-wider text-masthead border border-masthead px-1.5 py-0.5">
-            {method.label}
-          </span>
-        </div>
+        <h2 className="text-xs font-bold uppercase tracking-widest text-ink">Controls</h2>
       </div>
 
-      {/* Main accuracy ↔ diversity slider */}
+      {/* Main accuracy ↔ explore slider */}
       <div>
         <div className="flex justify-between text-xs text-ink-light mb-1.5">
           <span className="font-medium">Accuracy</span>
-          <span className="font-medium">Diversity</span>
+          <span className="font-medium">Explore</span>
         </div>
         <Slider value={sliders.main_diversity} onChange={val => update('main_diversity', val)} />
         <p className="text-xs text-ink-light mt-1 text-center">
           {sliders.main_diversity < 0.05
             ? 'Baseline — pure relevance ranking'
             : sliders.main_diversity > 0.75
-            ? 'Maximum diversity'
+            ? 'Maximum exploration'
             : 'Balanced'}
         </p>
       </div>
 
-      {/* Sub-sliders */}
+      {/* Four pillar sub-sliders — visible only when exploring */}
       {showSub && (
         <div className="space-y-3 pt-2 border-t border-rule">
-          <p className="text-xs uppercase tracking-widest text-ink-light font-medium">Diversity Mode</p>
           {SUB_SLIDERS.map(meta => (
             <div key={meta.key}>
               <div className="flex items-center justify-between mb-1">
@@ -84,13 +69,6 @@ export default function DiversitySidebar({ sliders, activeMethod, onChange }) {
           ))}
         </div>
       )}
-
-      {/* Algorithm description */}
-      <div className="border-t border-rule pt-3">
-        <p className="text-xs text-ink-light leading-relaxed">
-          <span className="font-semibold text-ink">{method.label}:</span> {method.desc}
-        </p>
-      </div>
     </div>
   )
 }

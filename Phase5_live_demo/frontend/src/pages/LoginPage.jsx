@@ -48,14 +48,24 @@ export default function LoginPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ user_id: effectiveUser }),
       })
-      if (!res.ok) throw new Error(`Login failed (${res.status})`)
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail || `Login failed (${res.status})`)
+      }
       const data = await res.json()
       localStorage.setItem('sessionId', data.session_id)
-      localStorage.setItem('quizCompleted', 'true')
-      localStorage.setItem('initialRecs', JSON.stringify(data))
-      localStorage.setItem('displayName', data.display_name || selectedUser)
-      localStorage.setItem('quizStyle', 'balanced')
-      navigate('/feed')
+      localStorage.setItem('displayName', data.display_name || effectiveUser)
+      if (data.is_new_user) {
+        // Unknown user ID — send them through the quiz first
+        localStorage.removeItem('quizCompleted')
+        localStorage.removeItem('initialRecs')
+        navigate('/quiz')
+      } else {
+        localStorage.setItem('quizCompleted', 'true')
+        localStorage.setItem('initialRecs', JSON.stringify(data))
+        localStorage.setItem('quizStyle', 'balanced')
+        navigate('/feed')
+      }
     } catch (e) {
       setError(e.message)
     } finally {

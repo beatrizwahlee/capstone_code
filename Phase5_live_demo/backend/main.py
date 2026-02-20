@@ -79,6 +79,7 @@ def _new_session(session_id: str | None = None) -> dict:
         "seed_history": [],   # immutable copy of initial history — used for reset
         "last_recs": [],
         "quiz_prefs": None,
+        "clicked_count": 0,   # user-initiated reads only (excludes cold-start seeds)
         "created_at": datetime.utcnow(),
         "last_accessed": datetime.utcnow(),
     }
@@ -103,20 +104,20 @@ def _sliders_to_method(sliders: dict) -> tuple[str, dict]:
 
     All sub-sliders contribute simultaneously — not winner-take-all.
     main_diversity controls the overall relevance ↔ diversity trade-off.
-    calibration / serendipity / fairness each share the diversity budget
-    proportionally to their own values, so moving any slider has a real effect.
+    diversity / calibration / serendipity / fairness each share the diversity
+    budget proportionally to their own values.
 
     Weights:
-      w_relevance   = max(0.40,  1.0 − main_diversity × 0.60)
+      w_relevance      = max(0.40,  1.0 − main_diversity × 0.60)
       diversity_budget = 1.0 − w_relevance
-      w_diversity   = 25% of diversity_budget  (always-on embedding diversity)
-      w_calibration, w_serendipity, w_fairness share the remaining 75%
-        proportionally to their slider values.
+      w_diversity, w_calibration, w_serendipity, w_fairness share the full
+        diversity_budget proportionally to their slider values.
     """
-    main_div = sliders.get("main_diversity", 0.5)
+    main_div    = sliders.get("main_diversity", 0.5)
+    diversity   = sliders.get("diversity",   0.5)
     calibration = sliders.get("calibration", 0.3)
     serendipity = sliders.get("serendipity", 0.2)
-    fairness = sliders.get("fairness", 0.2)
+    fairness    = sliders.get("fairness",    0.2)
 
     if main_div < 0.05:
         return "baseline", {}
@@ -125,19 +126,16 @@ def _sliders_to_method(sliders: dict) -> tuple[str, dict]:
     w_rel = max(0.40, 1.0 - main_div * 0.60)
     diversity_budget = 1.0 - w_rel
 
-    # Embedding diversity always gets 25% of diversity budget
-    w_div = diversity_budget * 0.25
-    sub_budget = diversity_budget * 0.75
-
-    # Split sub_budget proportionally among the 3 sub-sliders
-    total_sub = calibration + serendipity + fairness
+    # Split diversity_budget proportionally among all 4 sub-sliders
+    total_sub = diversity + calibration + serendipity + fairness
     if total_sub > 0:
-        w_cal  = sub_budget * (calibration / total_sub)
-        w_ser  = sub_budget * (serendipity / total_sub)
-        w_fair = sub_budget * (fairness    / total_sub)
+        w_div  = diversity_budget * (diversity   / total_sub)
+        w_cal  = diversity_budget * (calibration / total_sub)
+        w_ser  = diversity_budget * (serendipity / total_sub)
+        w_fair = diversity_budget * (fairness    / total_sub)
     else:
-        # All sub-sliders at 0 → equal split (pure diversity blend)
-        w_cal = w_ser = w_fair = sub_budget / 3.0
+        # All sub-sliders at 0 → equal split
+        w_div = w_cal = w_ser = w_fair = diversity_budget / 4.0
 
     # Exploration prior blends uniform distribution into calibration target
     explore = round(min(0.5, main_div * 0.4), 4)
@@ -155,11 +153,11 @@ def _sliders_to_method(sliders: dict) -> tuple[str, dict]:
 def _style_to_sliders(style: str) -> dict:
     # accurate → baseline model (main_diversity < 0.1 threshold → "baseline")
     if style == "accurate":
-        return {"main_diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
+        return {"main_diversity": 0.0, "diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
     if style == "explore":
-        return {"main_diversity": 0.9, "calibration": 0.1, "serendipity": 0.8, "fairness": 0.2}
-    # balanced (default) → mmr with moderate diversity
-    return {"main_diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
+        return {"main_diversity": 0.9, "diversity": 0.5, "calibration": 0.1, "serendipity": 0.8, "fairness": 0.2}
+    # balanced (default)
+    return {"main_diversity": 0.5, "diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
 
 
 # ---------------------------------------------------------------------------
@@ -273,22 +271,33 @@ def submit_quiz(req: QuizRequest) -> dict:
         "sliders": sliders,
     }
 
-    # Cold-start: seed history with top-2 popular articles from each selected topic
+    # Cold-start: seed history with top-5 popular articles from each selected topic.
+    # Aliases handle topics not in the real MIND dataset (e.g. science → news).
     seed_history: list[str] = []
     for topic in req.preferences.topics:
-        popular = service.get_popular_by_category(topic, k=2)
+        popular = service.get_popular_by_category(topic, k=5)
         seed_history.extend(a["news_id"] for a in popular)
     sess["history"] = seed_history
     sess["seed_history"] = list(seed_history)   # save for reset
+    sess["clicked_count"] = 0                   # user hasn't read anything yet
 
-    # Generate initial recommendations
-    method, params = _sliders_to_method(sliders)
-    recs = service.rerank(history=seed_history, k=10, method=method, **params)
+    # Cold-start initial recommendations: heavy calibration, no serendipity.
+    # This ensures the user's selected topics dominate the first feed rather
+    # than being crowded out by the serendipity bonus for unseen categories.
+    cold_start_params = {
+        "w_relevance":   0.40,
+        "w_diversity":   0.15,
+        "w_calibration": 0.30,
+        "w_serendipity": 0.00,
+        "w_fairness":    0.15,
+        "explore_weight": 0.0,
+    }
+    recs = service.rerank(history=seed_history, k=10, method="composite", **cold_start_params)
     sess["last_recs"] = [r["news_id"] for r in recs]
 
     return {
         **_build_rec_response(recs, seed_history, sliders),
-        "history_count": len(seed_history),
+        "history_count": 0,   # seed articles are internal; user hasn't read anything
     }
 
 
@@ -318,9 +327,10 @@ def record_click(req: ClickRequest) -> dict:
     recs = service.rerank(history=sess["history"], k=10, method=method, **params)
     sess["last_recs"] = [r["news_id"] for r in recs]
 
+    sess["clicked_count"] = sess.get("clicked_count", 0) + 1
     response = {
         **_build_rec_response(recs, sess["history"], sliders),
-        "history_count": len(sess["history"]),
+        "history_count": sess["clicked_count"],
     }
     if diversity_preference is not None:
         response["diversity_preference"] = diversity_preference
@@ -349,16 +359,24 @@ def list_users() -> dict:
 
 @app.post("/api/login")
 def login_with_profile(req: LoginRequest) -> dict:
-    """Create a session pre-loaded with an existing user's history."""
+    """Create a session pre-loaded with an existing user's history.
+    If the user ID is unknown, create a fresh session so the frontend
+    can redirect them to the quiz instead of returning an error."""
     _cleanup_old_sessions()
     user_info = service.get_user_info(req.user_id)
     if user_info is None:
-        raise HTTPException(status_code=404, detail=f"User {req.user_id} not found")
+        sess = _new_session()
+        return {
+            "session_id": sess["session_id"],
+            "is_new_user": True,
+            "display_name": req.user_id,
+        }
 
     sess = _new_session()  # fresh session id
     history = user_info.get("history", [])
     sess["history"] = list(history)
     sess["seed_history"] = list(history)   # save for reset
+    sess["clicked_count"] = len(history)   # existing users already read their history
     sess["quiz_prefs"] = {
         "topics": user_info.get("top_categories", []),
         "style": "balanced",
@@ -385,6 +403,7 @@ def reset_session(req: ResetRequest) -> dict:
     """Restore session history to the initial seed and return fresh recommendations."""
     sess = _get_session(req.session_id)
     sess["history"] = list(sess.get("seed_history", []))
+    sess["clicked_count"] = 0
 
     sliders = (
         sess["quiz_prefs"]["sliders"] if sess.get("quiz_prefs")
@@ -396,7 +415,7 @@ def reset_session(req: ResetRequest) -> dict:
 
     return {
         **_build_rec_response(recs, sess["history"], sliders),
-        "history_count": len(sess["history"]),
+        "history_count": 0,
     }
 
 
@@ -438,8 +457,8 @@ def compare_feeds(session_id: str) -> dict:
     sess = _get_session(session_id)
     history = sess.get("history", [])
 
-    baseline_sliders = {"main_diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
-    diversity_sliders = {"main_diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
+    baseline_sliders  = {"main_diversity": 0.0, "diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
+    diversity_sliders = {"main_diversity": 0.5, "diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
 
     baseline_recs = service.rerank(history=history, k=10, method="baseline")
     div_method, div_params = _sliders_to_method(diversity_sliders)

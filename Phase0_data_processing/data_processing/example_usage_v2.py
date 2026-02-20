@@ -311,8 +311,7 @@ def main():
     
     print("✓ Training data preprocessed!")
     print(f"  - News features: {len(train_processed['news_features'])} articles")
-    print(f"  - Training samples: {len(train_processed['train_data'])}")
-    print(f"  - Validation samples: {len(train_processed['val_data'])}")
+    print(f"  - Interactions: {len(train_processed['interactions'])}")
     print(f"  - Popularity scores: {len(train_processed['popularity_scores'])} articles")
     
     # =========================================================================
@@ -337,7 +336,7 @@ def main():
     valid_processed['quality_fixes_applied'] = train_processed['quality_fixes_applied']
     
     print("✓ Validation data preprocessed!")
-    print(f"  - Test samples: {len(valid_processed['val_data'])}")
+    print(f"  - Interactions: {len(valid_processed['interactions'])}")
     
     # =========================================================================
     # STEP 9: Generate comprehensive statistics
@@ -395,7 +394,7 @@ def main():
     print(f"✓ Saved quality fixes metadata: {output_dir / 'quality_fixes_applied.json'}")
     
     # Save interaction data (sample for inspection)
-    sample_train = pd.DataFrame(train_processed['train_data'][:1000])
+    sample_train = pd.DataFrame(train_processed['interactions'][:1000])
     sample_train.to_csv(output_dir / 'sample_train_interactions.csv', index=False)
     print(f"✓ Saved sample interactions: {output_dir / 'sample_train_interactions.csv'}")
     

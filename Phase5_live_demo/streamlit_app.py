@@ -123,7 +123,7 @@ def _build_cold_start_history(
         cat_articles = [
             (nid, pop_scores.get(nid, 0.0))
             for nid, c in cat_map.items()
-            if c == cat and nid in baseline.news_id_to_idx
+            if c == cat
         ]
         cat_articles.sort(key=lambda x: x[1], reverse=True)
         history.extend(nid for nid, _ in cat_articles[:articles_per_category])
@@ -485,7 +485,11 @@ def render_recommendations(baseline, reranker, news_df, params):
             f"Diversity / Calibration / Serendipity / Fairness  {pct}"
         )
 
-    st.markdown(f"**History:** {len(history)} articles  |  **Mode:** {mode_label}")
+    if st.session_state.user_interests:
+        interests_str = ", ".join(st.session_state.user_interests)
+        st.markdown(f"**Interests:** {interests_str}  |  **Mode:** {mode_label}")
+    else:
+        st.markdown(f"**History:** {len(history)} articles  |  **Mode:** {mode_label}")
 
     col_b, col_r = st.columns(2)
     news_idx = news_df.set_index("news_id")

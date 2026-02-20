@@ -7,14 +7,17 @@ import MetricsDashboard from '../components/MetricsDashboard.jsx'
 
 const DEFAULT_SLIDERS = {
   main_diversity: 0.5,
-  calibration: 0.3,
-  serendipity: 0.2,
-  fairness: 0.2,
+  diversity: 0.5,
+  calibration: 0.5,
+  serendipity: 0.5,
+  fairness: 0.5,
 }
 
+const SUB_SLIDER_DEFAULTS = { diversity: 0.5, calibration: 0.5, serendipity: 0.5, fairness: 0.5 }
+
 function styleToSliders(style) {
-  if (style === 'accurate') return { main_diversity: 0.0, calibration: 0.0, serendipity: 0.0, fairness: 0.0 }
-  if (style === 'explore')  return { main_diversity: 0.9, calibration: 0.1, serendipity: 0.8, fairness: 0.2 }
+  if (style === 'accurate') return { main_diversity: 0.0, ...SUB_SLIDER_DEFAULTS }
+  if (style === 'explore')  return { main_diversity: 0.9, ...SUB_SLIDER_DEFAULTS }
   return DEFAULT_SLIDERS
 }
 
@@ -120,8 +123,14 @@ export default function FeedPage() {
   }, [sessionId])
 
   function handleSliderChange(newSliders) {
-    setSliders(newSliders)
-    handleRerank(newSliders, false)
+    // When the main slider moves off zero for the first time,
+    // initialise all four pillar sliders to 50% instead of showing them at 0.
+    const movingOffZero = sliders.main_diversity === 0 && newSliders.main_diversity > 0
+    const finalSliders = movingOffZero
+      ? { ...newSliders, ...SUB_SLIDER_DEFAULTS }
+      : newSliders
+    setSliders(finalSliders)
+    handleRerank(finalSliders, false)
   }
 
   // Click = mark as read + refresh feed (live update)

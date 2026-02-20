@@ -313,16 +313,15 @@ class MINDPreprocessor:
         # 5. Calculate diversity metrics base stats
         diversity_stats = self.calculate_diversity_statistics()
         
-        # 6. Prepare train/validation splits
-        train_data, val_data = self.prepare_interaction_data()
-        
+        # 6. Prepare interaction data
+        interactions = self.prepare_interaction_data()
+
         logger.info("Preprocessing complete!")
-        
+
         return {
             'news_features': news_features,
             'user_item_matrix': user_item_matrix,
-            'train_data': train_data,
-            'val_data': val_data,
+            'interactions': interactions,
             'diversity_stats': diversity_stats,
             'encoders': {
                 'category': self.category_encoder,
@@ -556,35 +555,38 @@ class MINDPreprocessor:
         
         return user_diversity
     
-    def prepare_interaction_data(self) -> Tuple[List, List]:
+    def prepare_interaction_data(self) -> List:
         """
-        Prepare interaction data for training/validation.
-        
+        Prepare interaction data from behaviors.
+
+        The MIND dataset provides official train (MINDlarge_train) and
+        validation (MINDlarge_dev) splits, so no further splitting is done here.
+
         Returns:
-            Tuple of (train_data, val_data) where each is a list of dicts
+            List of interaction dicts for the loaded dataset split.
         """
         logger.info("Preparing interaction data...")
-        
+
         interactions = []
-        
+
         for _, row in self.behaviors_df.iterrows():
             user_id = row['user_id']
             user_idx = self.user_id_to_idx.get(user_id)
-            
+
             if user_idx is None:
                 continue
-            
+
             history = row['history']
             history_indices = [
-                self.news_id_to_idx[nid] 
-                for nid in history 
+                self.news_id_to_idx[nid]
+                for nid in history
                 if nid in self.news_id_to_idx
             ]
-            
+
             for news_id, label in row['impressions']:
                 if news_id in self.news_id_to_idx:
                     news_idx = self.news_id_to_idx[news_id]
-                    
+
                     interactions.append({
                         'user_id': user_id,
                         'user_idx': user_idx,
@@ -596,29 +598,9 @@ class MINDPreprocessor:
                         'impression_id': row['impression_id'],
                         'time': row['time']
                     })
-        
+
         logger.info(f"Prepared {len(interactions)} interaction samples")
-        
-        # For validation data, you might want to split by time or impression
-        # Here's a simple example - adjust based on your needs
-        if self.loader.dataset_type == 'train':
-            # Could do temporal split
-            split_time = self.behaviors_df['time'].quantile(0.8)
-            train_data = [
-                item for item in interactions 
-                if item['time'] <= split_time
-            ]
-            val_data = [
-                item for item in interactions 
-                if item['time'] > split_time
-            ]
-            logger.info(f"Split into {len(train_data)} train, {len(val_data)} val")
-        else:
-            train_data = []
-            val_data = interactions
-            logger.info(f"Using all {len(val_data)} as validation data")
-        
-        return train_data, val_data
+        return interactions
 
 
 def get_data_summary(loader: MINDDataLoader, preprocessor: MINDPreprocessor) -> Dict:

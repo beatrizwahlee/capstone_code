@@ -23,6 +23,18 @@ logger = logging.getLogger(__name__)
 # Mock article corpus (12 categories × 12 articles = 144 articles)
 # ---------------------------------------------------------------------------
 
+# ---------------------------------------------------------------------------
+# Category aliases — maps quiz topic IDs to real MIND dataset categories.
+# The MIND dataset does not have standalone 'science', 'technology', or
+# 'politics' categories; those topics are covered under 'news'.
+# ---------------------------------------------------------------------------
+
+_CATEGORY_ALIASES: dict[str, list[str]] = {
+    "science":    ["news"],
+    "technology": ["news"],
+    "politics":   ["news"],
+}
+
 MOCK_ARTICLES: list[dict] = [
     # ── SPORTS ──────────────────────────────────────────────────────────────
     {"news_id": "N001", "title": "Premier League: Manchester City's Haaland Scores Hat-Trick in Thrilling Victory", "category": "sports", "subcategory": "soccer", "abstract": "Manchester City secured a dominant 4-1 win over Arsenal on Saturday as Erling Haaland netted his tenth hat-trick of the season. The Norwegian striker is on pace to shatter all-time Premier League scoring records. Manager Pep Guardiola called it 'a perfect performance from the whole squad.'", "score": 0.95},
@@ -463,22 +475,40 @@ def _mock_xquad(history: list[str], k: int, lambda_param: float) -> list[dict]:
 # ---------------------------------------------------------------------------
 
 class RecommenderService:
-    """Wraps ML models with automatic fallback to mock mode."""
+    """Wraps ML models with automatic fallback to mock mode.
+
+    By default the service runs in **mock/demo mode** — 144 curated articles
+    across all 12 quiz categories (including science, technology, politics).
+    Set the environment variable ``NEWSLENS_REAL_MODE=1`` to load the real
+    MIND-dataset models instead (note: MIND does not have science/technology/
+    politics categories, so those quiz topics will fall back to 'news').
+    """
 
     def __init__(self, base_dir: Path):
-        self.mock_mode = False
+        import os
+        self.mock_mode = True          # demo mode by default
         self._article_db: dict[str, dict] = dict(_ARTICLE_BY_ID)
         self._news_df = None
         self._baseline = None
         self._reranker = None
         self._analyzer = None
 
-        try:
-            self._load_real_models(base_dir)
-            logger.info("RecommenderService: real models loaded successfully")
-        except Exception as exc:
-            logger.warning("RecommenderService: real models unavailable (%s). Using mock mode.", exc)
-            self.mock_mode = True
+        use_real = os.environ.get("NEWSLENS_REAL_MODE", "").lower() in ("1", "true", "yes")
+        if use_real:
+            try:
+                self._load_real_models(base_dir)
+                self.mock_mode = False
+                logger.info("RecommenderService: real MIND models loaded successfully")
+            except Exception as exc:
+                logger.warning(
+                    "RecommenderService: real models unavailable (%s). Falling back to mock mode.", exc
+                )
+                self.mock_mode = True
+        else:
+            logger.info(
+                "RecommenderService: running in mock/demo mode "
+                "(set NEWSLENS_REAL_MODE=1 to use real MIND data)"
+            )
 
     # ------------------------------------------------------------------
     # Real model loading
@@ -619,25 +649,29 @@ class RecommenderService:
         if self.mock_mode:
             pool = _BY_CATEGORY.get(category, [])
             return sorted(pool, key=lambda a: a["score"], reverse=True)[:k]
-        # Real mode: filter news_df
+        # Real mode: filter news_df, with alias fallback for categories not in MIND
         if self._news_df is None:
             return []
-        import pandas as pd  # noqa: PLC0415
-        mask = self._news_df["category"] == category
-        subset = self._news_df[mask]
-        arts = []
-        for _, row in subset.iterrows():
-            nid = row["news_id"]
-            arts.append({
-                "news_id": nid,
-                "title": row.get("title", ""),
-                "category": row.get("category", "unknown"),
-                "subcategory": row.get("subcategory", ""),
-                "abstract": row.get("abstract", ""),
-                "score": float(self._baseline.popularity_scores.get(nid, 0.0)),
-            })
-        arts.sort(key=lambda a: a["score"], reverse=True)
-        return arts[:k]
+        candidates_to_try = [category] + _CATEGORY_ALIASES.get(category, [])
+        for cat in candidates_to_try:
+            mask = self._news_df["category"] == cat
+            subset = self._news_df[mask]
+            if len(subset) == 0:
+                continue
+            arts = []
+            for _, row in subset.iterrows():
+                nid = row["news_id"]
+                arts.append({
+                    "news_id": nid,
+                    "title": row.get("title", ""),
+                    "category": row.get("category", "unknown"),
+                    "subcategory": row.get("subcategory", ""),
+                    "abstract": row.get("abstract", ""),
+                    "score": float(self._baseline.popularity_scores.get(nid, 0.0)),
+                })
+            arts.sort(key=lambda a: a["score"], reverse=True)
+            return arts[:k]
+        return []
 
     def recommend(self, history: list[str], k: int = 10) -> list[dict]:
         """Return top-k recommended articles (dict list)."""
