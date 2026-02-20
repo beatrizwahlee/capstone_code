@@ -1,0 +1,34 @@
+# ============================================================
+# Capstone Project — Diversity-Aware News Recommender
+# Unified requirements for all phases
+# ============================================================
+
+# ── Core data / ML ──────────────────────────────────────────
+numpy>=1.24.0
+pandas>=2.0.0
+scikit-learn>=1.3.0
+scipy>=1.11.0
+
+# ── NLP / Embeddings (Phase 1) ──────────────────────────────
+sentence-transformers>=2.2.0
+transformers>=4.35.0
+torch>=2.0.0
+
+# ── FAISS (optional but recommended for Phase 2) ────────────
+# faiss-cpu>=1.7.4         # install manually: pip install faiss-cpu
+
+# ── Visualizations (Phase 3 & 4) ────────────────────────────
+matplotlib>=3.7.0
+seaborn>=0.12.0
+
+# ── Phase 5 Backend ─────────────────────────────────────────
+fastapi>=0.104.0
+uvicorn[standard]>=0.24.0
+pydantic>=2.0.0
+
+# ── Phase 5 Optional (Streamlit UI) ─────────────────────────
+streamlit>=1.28.0
+
+# ── Utilities ───────────────────────────────────────────────
+tqdm>=4.65.0
+requests>=2.31.0

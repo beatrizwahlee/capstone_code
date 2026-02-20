@@ -2,9 +2,6 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 import ArticleCard from '../components/ArticleCard.jsx'
 
-const BASELINE_SLIDERS = { main_diversity: 0.0, calibration: 0.0, serendipity: 0.0, fairness: 0.0 }
-const DIVERSITY_SLIDERS = { main_diversity: 0.5, calibration: 0.3, serendipity: 0.2, fairness: 0.2 }
-
 const CAT_DISPLAY = {
   sports: 'Sports', health: 'Health', technology: 'Technology',
   politics: 'Politics', finance: 'Finance', entertainment: 'Entertainment',
@@ -12,13 +9,9 @@ const CAT_DISPLAY = {
   lifestyle: 'Lifestyle', autos: 'Autos', weather: 'Weather',
 }
 
-async function apiRerank(sessionId, sliders) {
-  const res = await fetch('/api/rerank', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, sliders }),
-  })
-  if (!res.ok) throw new Error(`Rerank error ${res.status}`)
+async function apiCompare(sessionId) {
+  const res = await fetch(`/api/compare/${sessionId}`)
+  if (!res.ok) throw new Error(`Compare error ${res.status}`)
   return res.json()
 }
 
@@ -112,16 +105,16 @@ export default function ComparePage() {
   useEffect(() => {
     if (!sessionId) { navigate('/'); return }
 
-    // Fetch both simultaneously
-    apiRerank(sessionId, BASELINE_SLIDERS)
-      .then(d => { setBaselineRecs(d.recommendations || []); setBaselineMetrics(d.metrics) })
-      .catch(e => setErrorB(e.message))
-      .finally(() => setLoadingB(false))
-
-    apiRerank(sessionId, DIVERSITY_SLIDERS)
-      .then(d => { setDiversityRecs(d.recommendations || []); setDiversityMetrics(d.metrics) })
-      .catch(e => setErrorD(e.message))
-      .finally(() => setLoadingD(false))
+    // Single read-only call — does not mutate session slider state
+    apiCompare(sessionId)
+      .then(d => {
+        setBaselineRecs(d.baseline?.recommendations || [])
+        setBaselineMetrics(d.baseline?.metrics ?? null)
+        setDiversityRecs(d.diversity?.recommendations || [])
+        setDiversityMetrics(d.diversity?.metrics ?? null)
+      })
+      .catch(e => { setErrorB(e.message); setErrorD(e.message) })
+      .finally(() => { setLoadingB(false); setLoadingD(false) })
   }, []) // eslint-disable-line
 
   // Find categories in diversity feed that are NOT in baseline feed

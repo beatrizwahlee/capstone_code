@@ -288,30 +288,75 @@ def evaluate_baseline(
 
 def print_results(results: Dict):
     """Pretty-print evaluation results."""
-    print("\n" + "=" * 60)
-    print("BASELINE RESULTS")
-    print("=" * 60)
-    
-    print("\n--- Accuracy Metrics ---")
-    print(f"  AUC:         {results['auc']:.4f}")
-    print(f"  MRR:         {results['mrr']:.4f}")
-    
-    for k in CONFIG["k_values"]:
-        print(f"\n@{k}:")
-        print(f"  Precision:   {results[f'precision@{k}']:.4f}")
-        print(f"  Recall:      {results[f'recall@{k}']:.4f}")
-        print(f"  F1:          {results[f'f1@{k}']:.4f}")
-        print(f"  NDCG:        {results[f'ndcg@{k}']:.4f}")
-    
+    W = 62   # column width
+
+    def _row(label, value, note=""):
+        note_str = f"  ← {note}" if note else ""
+        print(f"  {label:<26s}  {value}{note_str}")
+
+    print("\n" + "=" * W)
+    print("  BASELINE RECOMMENDER — ACCURACY EVALUATION")
+    print("=" * W)
+
+    # ── Ranking metrics (list-level) ────────────────────────────────
+    print("\n  ┌─ Ranking Metrics (list-level) ──────────────────────┐")
+    _row("AUC",
+         f"{results['auc']:.4f}",
+         "separates clicked vs non-clicked")
+    _row("MRR",
+         f"{results['mrr']:.4f}",
+         "rank of the first hit")
+    if 'score_gap' in results:
+        gap = results['score_gap']
+        note = "model scores clicks higher ✓" if gap > 0 else "model scores clicks LOWER ✗"
+        _row("Score Gap (pos − neg)",
+             f"{gap:+.4f}",
+             note)
+    print("  └─────────────────────────────────────────────────────┘")
+
+    # ── Top-K metrics ───────────────────────────────────────────────
+    k_vals = CONFIG["k_values"]
+    header = "  Metric" + "".join(f"       @{k}" for k in k_vals)
+    print(f"\n  ┌─ Top-K Metrics (averaged over impressions) {'─' * 14}┐")
+    print(header)
+    print("  " + "─" * (W - 2))
+
+    metric_labels = {
+        "HR":        ("hr",        "Hit Rate — ≥1 relevant item in top-K"),
+        "NDCG":      ("ndcg",      "Normalised DCG — rewards higher ranks"),
+        "MAP":       ("map",       "Mean Avg Precision — rewards dense hits"),
+        "Precision": ("precision", "Precision@K"),
+        "Recall":    ("recall",    "Recall@K"),
+        "F1":        ("f1",        "Harmonic mean of P & R"),
+    }
+    for display, (key, desc) in metric_labels.items():
+        vals = "".join(
+            f"      {results.get(f'{key}@{k}', float('nan')):.4f}"
+            for k in k_vals
+        )
+        print(f"  {display:<12s}{vals}   ← {desc}")
+
+    print("  └─────────────────────────────────────────────────────┘")
+
+    # ── Diversity metrics ────────────────────────────────────────────
     if 'diversity' in results:
-        print("\n--- Diversity Metrics (Baseline) ---")
         div = results['diversity']
-        print(f"  Avg Coverage:              {div['avg_coverage']:.2f}")
-        print(f"  Avg Gini (per user):       {div['avg_gini']:.4f}")
-        print(f"  Overall Gini:              {div['overall_gini']:.4f}")
-        print(f"  Unique categories in recs: {div['unique_categories_recommended']}")
-    
-    print("\n" + "=" * 60)
+        print(f"\n  ┌─ Diversity Metrics (baseline reference) {'─' * 17}┐")
+        _row("Avg category coverage",
+             f"{div['avg_coverage']:.2f}",
+             "unique cats per user's top-10")
+        _row("Avg Gini (per user)",
+             f"{div['avg_gini']:.4f}",
+             "0 = perfectly even, 1 = one cat only")
+        _row("Overall Gini",
+             f"{div['overall_gini']:.4f}",
+             "across all recommendations")
+        _row("Unique categories",
+             f"{div['unique_categories_recommended']}",
+             "out of all available categories")
+        print("  └─────────────────────────────────────────────────────┘")
+
+    print("\n" + "=" * W)
 
 
 def save_results(recommender: BaselineRecommender, results: Dict, output_dir: Path):

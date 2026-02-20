@@ -40,7 +40,7 @@ function MetricTile({ label, value, sub, good }) {
   )
 }
 
-export default function MetricsDashboard({ metrics, categoryDist, historyCount }) {
+export default function MetricsDashboard({ metrics, categoryDist, historyCount, diversityPreference }) {
   if (!metrics) return null
 
   const { gini, ild, coverage, coverage_str, entropy } = metrics
@@ -122,6 +122,30 @@ export default function MetricsDashboard({ metrics, categoryDist, historyCount }
           </div>
         )}
       </div>
+
+      {/* Learned diversity preference */}
+      {diversityPreference != null && (
+        <div className="border-t border-rule pt-3">
+          <p className="text-xs font-bold uppercase tracking-widest text-ink mb-1.5">
+            Learned Preference
+          </p>
+          <div className="flex items-center gap-2 mb-1">
+            <span className="text-xs text-ink-light w-16 text-right">Focused</span>
+            <div className="flex-1 bg-rule/30 h-1.5 overflow-hidden">
+              <div
+                className="h-full bg-masthead transition-all duration-700"
+                style={{ width: `${diversityPreference * 100}%` }}
+              />
+            </div>
+            <span className="text-xs text-ink-light w-16">Explorer</span>
+          </div>
+          <p className="text-xs text-ink-light text-center">
+            {diversityPreference > 0.65 ? 'Explorer — you enjoy variety'
+             : diversityPreference < 0.35 ? 'Specialist — you prefer depth'
+             : 'Balanced reader'}
+          </p>
+        </div>
+      )}
     </div>
   )
 }

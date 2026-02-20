@@ -23,6 +23,15 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+import sys as _sys
+_sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+try:
+    from personalized_tuner import PersonalizedWeightTuner, infer_time_of_day
+    _tuner = PersonalizedWeightTuner(learning_rate=0.1)
+    _tuner_available = True
+except Exception:
+    _tuner_available = False
+
 from recommender_service import RecommenderService
 
 logging.basicConfig(level=logging.INFO)
@@ -289,6 +298,19 @@ def record_click(req: ClickRequest) -> dict:
     if req.news_id not in sess["history"]:
         sess["history"].append(req.news_id)
 
+    # Feed implicit click signal into the personalized tuner
+    diversity_preference: float | None = None
+    if _tuner_available:
+        art = service.get_article(req.news_id)
+        _tuner.update_from_interactions(req.session_id, [{
+            "action": "click",
+            "news_id": req.news_id,
+            "category": art["category"] if art else "unknown",
+        }])
+        patterns = _tuner.interaction_patterns[req.session_id]
+        if patterns["total_interactions"] >= 5:
+            diversity_preference = round(patterns["diversity_preference_score"], 3)
+
     sliders = req.sliders or (
         sess["quiz_prefs"]["sliders"] if sess["quiz_prefs"] else _style_to_sliders("balanced")
     )
@@ -296,10 +318,13 @@ def record_click(req: ClickRequest) -> dict:
     recs = service.rerank(history=sess["history"], k=10, method=method, **params)
     sess["last_recs"] = [r["news_id"] for r in recs]
 
-    return {
+    response = {
         **_build_rec_response(recs, sess["history"], sliders),
         "history_count": len(sess["history"]),
     }
+    if diversity_preference is not None:
+        response["diversity_preference"] = diversity_preference
+    return response
 
 
 @app.post("/api/rerank")
@@ -372,6 +397,76 @@ def reset_session(req: ResetRequest) -> dict:
     return {
         **_build_rec_response(recs, sess["history"], sliders),
         "history_count": len(sess["history"]),
+    }
+
+
+@app.get("/api/profile/{session_id}")
+def get_session_profile(session_id: str) -> dict:
+    """
+    Return the personalized diversity profile inferred from this session's clicks.
+    Requires at least 5 interactions before the score becomes meaningful.
+    """
+    sess = _get_session(session_id)
+    if not _tuner_available:
+        return {"available": False}
+    patterns = _tuner.interaction_patterns[session_id]
+    n = patterns["total_interactions"]
+    score = patterns["diversity_preference_score"] if n >= 5 else None
+    weights = _tuner.get_user_weights(
+        session_id,
+        context={"time_of_day": infer_time_of_day(), "session_length": n},
+    ) if n >= 5 else None
+    return {
+        "available": True,
+        "total_interactions": n,
+        "diversity_preference_score": round(score, 3) if score is not None else None,
+        "inferred_weights": {k: round(v, 3) for k, v in weights.items()} if weights else None,
+        "label": (
+            "Explorer" if (score or 0) > 0.65
+            else "Specialist" if (score or 1) < 0.35
+            else "Balanced reader"
+        ) if score is not None else None,
+    }
+
+
+@app.get("/api/compare/{session_id}")
+def compare_feeds(session_id: str) -> dict:
+    """
+    Return baseline vs diversity recommendations side-by-side.
+    Read-only — does NOT mutate session slider state.
+    """
+    sess = _get_session(session_id)
+    history = sess.get("history", [])
+
+    baseline_sliders = {"main_diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
+    diversity_sliders = {"main_diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
+
+    baseline_recs = service.rerank(history=history, k=10, method="baseline")
+    div_method, div_params = _sliders_to_method(diversity_sliders)
+    diversity_recs = service.rerank(history=history, k=10, method=div_method, **div_params)
+
+    def _fmt(recs: list[dict], sliders: dict) -> dict:
+        ids = [r["news_id"] for r in recs]
+        return {
+            "recommendations": [
+                {
+                    "news_id": r["news_id"],
+                    "title": r["title"],
+                    "category": r["category"],
+                    "subcategory": r.get("subcategory", ""),
+                    "abstract": r.get("abstract", ""),
+                    "score": round(float(r.get("score", 0.5)), 4),
+                }
+                for r in recs
+            ],
+            "metrics": service.compute_metrics(ids, history),
+            "category_distribution": dict(Counter(r["category"] for r in recs)),
+            "active_method": _sliders_to_method(sliders)[0],
+        }
+
+    return {
+        "baseline": _fmt(baseline_recs, baseline_sliders),
+        "diversity": _fmt(diversity_recs, diversity_sliders),
     }
 
 

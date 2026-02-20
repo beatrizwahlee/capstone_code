@@ -1,6 +1,12 @@
 """
-Phase 7: LLM-Adaptive Content Reframing
-========================================
+Phase 7: LLM-Adaptive Content Reframing  [FUTURE WORK — NOT INTEGRATED]
+=========================================================================
+Status: Designed and implemented but NOT connected to the live demo backend.
+        Requires an API key (Anthropic / OpenAI) to run.
+
+To integrate: import LLMContentReframer in main.py and call reframe_article()
+before returning recommendations in _build_rec_response().
+
 Diversity-Aware News Recommender System — Capstone Project
 
 This module uses Large Language Models (Claude, GPT-4, or local models) to

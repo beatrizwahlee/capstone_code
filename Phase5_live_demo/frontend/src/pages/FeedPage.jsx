@@ -65,6 +65,7 @@ export default function FeedPage() {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [historyArticles, setHistoryArticles] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
+  const [diversityPreference, setDiversityPreference] = useState(null)
 
   const debounceRef = useRef(null)
 
@@ -74,6 +75,7 @@ export default function FeedPage() {
     if (data.category_distribution) setCategoryDist(data.category_distribution)
     if (data.active_method)   setActiveMethod(data.active_method)
     if (typeof data.history_count === 'number') setHistoryCount(data.history_count)
+    if (typeof data.diversity_preference === 'number') setDiversityPreference(data.diversity_preference)
   }
 
   // On mount: restore initial recs from localStorage (set by quiz or login)
@@ -379,6 +381,7 @@ export default function FeedPage() {
                   metrics={metrics}
                   categoryDist={categoryDist}
                   historyCount={historyCount}
+                  diversityPreference={diversityPreference}
                 />
               )}
 

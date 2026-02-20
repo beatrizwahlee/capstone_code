@@ -500,6 +500,7 @@ class RecommenderService:
         from baseline_recommender_phase2 import BaselineRecommender  # noqa: PLC0415
         from diversity_reranker import DiversityReranker  # noqa: PLC0415
         from echo_chamber_analyzer import EchoChamberAnalyzer  # noqa: PLC0415
+        import ast as _ast  # noqa: PLC0415
         import pandas as pd  # noqa: PLC0415
 
         baseline_path = str(
@@ -507,6 +508,7 @@ class RecommenderService:
         )
         embeddings_dir = str(root / "Phase1_NLP_encoding" / "embeddings")
         news_path = str(root / "Phase0_data_processing" / "processed_data" / "news_features_train.csv")
+        behaviors_path = root / "Phase0_data_processing" / "processed_data" / "sample_train_interactions.csv"
 
         self._baseline = BaselineRecommender.load(baseline_path, embeddings_dir)
         self._news_df = pd.read_csv(news_path)
@@ -537,6 +539,38 @@ class RecommenderService:
                 "score": float(self._baseline.popularity_scores.get(row["news_id"], 0.5)),
             }
 
+        # Load real user histories from sample_train_interactions.csv
+        self._real_user_profiles: dict[str, dict] = {}
+        if behaviors_path.exists():
+            bdf = pd.read_csv(behaviors_path)
+            for _, row in bdf.iterrows():
+                uid = str(row["user_id"])
+                if uid in self._real_user_profiles:
+                    continue
+                raw = row.get("history", "[]")
+                try:
+                    history = _ast.literal_eval(raw) if isinstance(raw, str) else []
+                except Exception:
+                    history = []
+                if not history:
+                    continue
+                # Compute top categories from history
+                hist_cats = [
+                    news_categories.get(nid, "")
+                    for nid in history
+                    if news_categories.get(nid)
+                ]
+                top_cats = [c for c, _ in Counter(hist_cats).most_common(3)]
+                self._real_user_profiles[uid] = {
+                    "display_name": uid,
+                    "history": history,
+                    "top_categories": top_cats,
+                }
+            logger.info(
+                "Loaded %d real user profiles from behaviors data",
+                len(self._real_user_profiles),
+            )
+
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
@@ -553,25 +587,27 @@ class RecommenderService:
                 }
                 for uid, info in MOCK_USER_PROFILES.items()
             ]
-        # Real mode: return a sample of users from the behaviors data
-        try:
-            users = []
-            if self._news_df is not None:
-                # Use mock profiles as representative demo accounts even in real mode
-                for uid, info in MOCK_USER_PROFILES.items():
-                    users.append({
-                        "user_id": uid,
-                        "display_name": info["display_name"],
-                        "top_categories": info["top_categories"],
-                        "history_count": len(info["history"]),
-                    })
-            return users
-        except Exception:
-            return []
+        # Real mode: return the actual test-set users loaded from behaviors CSV
+        real = getattr(self, "_real_user_profiles", {})
+        if real:
+            return [
+                {
+                    "user_id": uid,
+                    "display_name": uid,
+                    "top_categories": info["top_categories"],
+                    "history_count": len(info["history"]),
+                }
+                for uid, info in real.items()
+            ]
+        return []
 
     def get_user_info(self, user_id: str) -> dict | None:
         """Return history and metadata for a known user."""
-        # Always check mock profiles first (they work in both modes)
+        # Real mode: check real user profiles first
+        real = getattr(self, "_real_user_profiles", {})
+        if user_id in real:
+            return real[user_id]
+        # Fallback: mock profiles (work in both modes)
         if user_id in MOCK_USER_PROFILES:
             return MOCK_USER_PROFILES[user_id]
         return None

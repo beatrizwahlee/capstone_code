@@ -26,3 +26,7 @@ env/
 
 # Node.js dependencies
 node_modules/
+
+## Generated visualization outputs (regenerable — run run_phase*_visualization.py)
+Phase3_echo_chambers/outputs/visualizations/
+Phase4_reranker/outputs/diversity_evaluation/visualizations/
