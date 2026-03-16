@@ -907,6 +907,9 @@ class DiversityReranker:
         t_total = sum(target_dist.values())
         target_dist = {cat: v / t_total for cat, v in target_dist.items()}
 
+        # User history category set (for fairness — avoid penalising user-chosen categories)
+        history_cats_set = set(history_cats)
+
         # User embedding centroid (for serendipity)
         history_embs = [
             self.embeddings[self.news_id_to_idx[nid]]
@@ -979,9 +982,9 @@ class DiversityReranker:
                 # than dominant ones (e.g. rare "travel/backpacking" >> common "news/politics").
                 # Formula: gap_below_equal_share × scarcity_multiplier
                 #   scarcity = uniform / corpus_prop  (rare→high multiplier, dominant→low)
-                # This is supply-side fairness — target is equal representation, amplified
-                # for how structurally under-served the item is in the corpus.
-                # Distinct from calibration (which targets user history distribution).
+                # Scarcity is only applied to categories outside the user's history —
+                # user-chosen categories are already handled by calibration and should
+                # not be penalised just because they dominate the corpus (e.g. sports).
                 subcat = self.news_subcategories.get(nid, "")
                 if self.corpus_subcategory_dist and subcat:
                     corpus_subcat_prop = self.corpus_subcategory_dist.get(subcat, 0.0)
@@ -989,7 +992,7 @@ class DiversityReranker:
                         uniform_sub = 1.0 / max(self.n_subcategories, 1)
                         cur_sub_prop = selected_subcats.get(subcat, 0) / n_selected
                         gap = max(0.0, uniform_sub - cur_sub_prop)
-                        scarcity = uniform_sub / corpus_subcat_prop
+                        scarcity = 1.0 if cat in history_cats_set else uniform_sub / corpus_subcat_prop
                         fair_score = min(1.0, gap * scarcity / uniform_sub)
                     else:
                         fair_score = 0.0
@@ -999,7 +1002,7 @@ class DiversityReranker:
                         uniform_cat = 1.0 / max(self.n_categories, 1)
                         cur_cat_prop = selected_cats.get(cat, 0) / n_selected
                         gap = max(0.0, uniform_cat - cur_cat_prop)
-                        scarcity = uniform_cat / corpus_cat_prop
+                        scarcity = 1.0 if cat in history_cats_set else uniform_cat / corpus_cat_prop
                         fair_score = min(1.0, gap * scarcity / uniform_cat)
                     else:
                         fair_score = 0.0

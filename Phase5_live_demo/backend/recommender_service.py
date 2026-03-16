@@ -203,29 +203,12 @@ for _art in MOCK_ARTICLES:
 ALL_CATEGORIES: list[str] = sorted(_BY_CATEGORY.keys())
 
 # ---------------------------------------------------------------------------
-# Corpus category distribution — approximates real MIND dataset proportions.
-# The mock corpus has equal article counts per category (12 each), but the
-# real MIND dataset is heavily skewed.  This dict lets the mock fairness
-# metric use realistic corpus proportions without physically multiplying
-# articles, mirroring how DiversityReranker receives corpus_category_dist.
-# Source: MIND large dataset category breakdown (approximate).
+# Corpus category distribution — computed from the actual mock articles so
+# the fairness scorer reflects the real candidate pool, not an external bias.
 # ---------------------------------------------------------------------------
+_mock_total = len(MOCK_ARTICLES)
 CORPUS_CATEGORY_FREQ: dict[str, float] = {
-    "sports":        0.315,
-    "news":          0.300,
-    "finance":       0.058,
-    "travel":        0.049,
-    "lifestyle":     0.045,
-    "video":         0.045,
-    "foodanddrink":  0.044,
-    "weather":       0.042,
-    "autos":         0.030,
-    "health":        0.029,
-    "tv":            0.013,
-    "music":         0.012,
-    "entertainment": 0.008,
-    "movies":        0.008,
-    "kids":          0.001,
+    cat: len(arts) / _mock_total for cat, arts in _BY_CATEGORY.items()
 }
 
 # ---------------------------------------------------------------------------
@@ -451,17 +434,16 @@ def _mock_composite(history: list[str], k: int, **params: Any) -> list[dict]:
             history_novelty = 1.0 if cat not in hist_cats_set else 0.1
             ser_score       = is_new_to_list * history_novelty
             # 5. Fairness: scarcity-weighted minority boost.
-            # Goal: give corpus-rare categories (weather, autos, technology)
-            # a stronger push than dominant ones (sports, politics).
+            # Goal: give corpus-rare categories a stronger push than dominant ones.
             # Formula: reward = gap_below_equal_share × scarcity_multiplier
-            #   scarcity_multiplier = uniform / corpus_prop  (weather→8.3×, sports→0.44×)
-            # This is supply-side fairness: the target is equal representation,
-            # amplified proportionally for how under-served the category is in
-            # the corpus — distinct from calibration (which targets user history).
+            #   scarcity_multiplier = uniform / corpus_prop  (rare→>1, dominant→<1)
+            # Scarcity is only applied to categories outside the user's history —
+            # user-chosen categories are already handled by calibration and should
+            # not be penalized just because they are corpus-dominant (e.g. sports).
             corpus_prop     = CORPUS_CATEGORY_FREQ.get(cat, uniform)
             cur_prop        = _sc.count(cat) / _n
             gap             = max(0.0, uniform - cur_prop)
-            scarcity        = uniform / corpus_prop          # > 1 for rare cats, < 1 for dominant
+            scarcity        = 1.0 if cat in hist_cats_set else uniform / corpus_prop
             fair_score      = min(1.0, gap * scarcity / uniform)
             return (
                 w_rel  * rel
