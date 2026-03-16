@@ -2,10 +2,11 @@ import { useState, useEffect } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const CAT_DISPLAY = {
-  sports: 'Sports', health: 'Health', technology: 'Technology',
-  politics: 'Politics', finance: 'Finance', entertainment: 'Entertainment',
-  travel: 'Travel', science: 'Science', foodanddrink: 'Food & Drink',
-  lifestyle: 'Lifestyle', autos: 'Autos', weather: 'Weather',
+  sports: 'Sports', news: 'News', health: 'Health',
+  finance: 'Finance', entertainment: 'Entertainment', travel: 'Travel',
+  foodanddrink: 'Food & Drink', lifestyle: 'Lifestyle', autos: 'Autos',
+  weather: 'Weather', music: 'Music', movies: 'Movies',
+  tv: 'TV', video: 'Video', kids: 'Kids',
 }
 
 function today() {
@@ -136,7 +137,7 @@ export default function LoginPage() {
 
             {/* Expandable body */}
             <div className={`transition-all duration-300 ease-in-out overflow-hidden ${
-              activePanel === 'signin' ? 'max-h-[800px] opacity-100' : 'max-h-0 opacity-0'
+              activePanel === 'signin' ? 'max-h-[600px] opacity-100' : 'max-h-0 opacity-0'
             }`}>
               <div className="px-6 py-5 flex flex-col">
 
@@ -158,13 +159,13 @@ export default function LoginPage() {
                   <p className="text-xs text-ink-light mb-3 uppercase tracking-wide font-medium">
                     Or choose a suggested profile:
                   </p>
-                  <div className="space-y-2">
+                  <div className="space-y-2 max-h-60 overflow-y-auto pr-1">
                     {users.length === 0 && (
                       <p className="text-sm text-ink-light/50 animate-pulse py-2 text-center">
                         Loading reader profiles…
                       </p>
                     )}
-                    {users.map(u => (
+                    {users.slice(0, 5).map(u => (
                       <button
                         key={u.user_id}
                         onClick={() => { setSelectedUser(u.user_id); setCustomUserId('') }}

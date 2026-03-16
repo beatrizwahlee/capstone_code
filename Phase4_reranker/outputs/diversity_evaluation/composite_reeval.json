@@ -1,0 +1,27 @@
+{
+  "method": "composite",
+  "params": {
+    "w_relevance": 0.35,
+    "w_diversity": 0.25,
+    "w_calibration": 0.25,
+    "w_serendipity": 0.1,
+    "w_fairness": 0.05,
+    "explore_weight": 0.4
+  },
+  "accuracy": {
+    "auc": 0.6442205108787165,
+    "ndcg@10": 0.4041347668827407,
+    "mrr": 0.3486438800477013,
+    "precision@10": 0.08571891191709845,
+    "recall@10": 0.6506582778967818
+  },
+  "diversity": {
+    "avg_gini": 0.19647465079365076,
+    "avg_ild": 0.8196416344723954,
+    "avg_coverage": 0.41347777777777783,
+    "avg_entropy": 2.7231333694354785,
+    "avg_calibration_error": 0.3665830927378315,
+    "system_hhi": 0.031049127799999996,
+    "system_kl_divergence": 0.2665470281638842
+  }
+}

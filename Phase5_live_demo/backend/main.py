@@ -114,16 +114,16 @@ def _sliders_to_method(sliders: dict) -> tuple[str, dict]:
         diversity_budget proportionally to their slider values.
     """
     main_div    = sliders.get("main_diversity", 0.5)
-    diversity   = sliders.get("diversity",   0.5)
-    calibration = sliders.get("calibration", 0.3)
-    serendipity = sliders.get("serendipity", 0.2)
-    fairness    = sliders.get("fairness",    0.2)
+    diversity   = sliders.get("diversity",   0.25)
+    calibration = sliders.get("calibration", 0.25)
+    serendipity = sliders.get("serendipity", 0.25)
+    fairness    = sliders.get("fairness",    0.25)
 
     if main_div < 0.05:
         return "baseline", {}
 
-    # Relevance weight: 1.0 at main_div=0, 0.40 at main_div=1.0
-    w_rel = max(0.40, 1.0 - main_div * 0.60)
+    # Relevance weight: 1.0 at main_div=0, 0.35 at main_div=1.0
+    w_rel = max(0.35, 1.0 - main_div * 0.65)
     diversity_budget = 1.0 - w_rel
 
     # Split diversity_budget proportionally among all 4 sub-sliders
@@ -137,8 +137,12 @@ def _sliders_to_method(sliders: dict) -> tuple[str, dict]:
         # All sub-sliders at 0 → equal split
         w_div = w_cal = w_ser = w_fair = diversity_budget / 4.0
 
-    # Exploration prior blends uniform distribution into calibration target
-    explore = round(min(0.5, main_div * 0.4), 4)
+    # Exploration prior blends uniform distribution into calibration target.
+    # Serendipity co-drives explore_weight: higher serendipity makes the
+    # calibration target more uniform, so both signals push for coverage together
+    # instead of serendipity fighting against a history-biased calibration target.
+    ser_fraction = (serendipity / total_sub) if total_sub > 0 else 0.25
+    explore = round(min(0.9, main_div * 0.4 + ser_fraction * 0.5), 4)
 
     return "composite", {
         "w_relevance":   round(w_rel, 4),
@@ -155,9 +159,9 @@ def _style_to_sliders(style: str) -> dict:
     if style == "accurate":
         return {"main_diversity": 0.0, "diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
     if style == "explore":
-        return {"main_diversity": 0.9, "diversity": 0.5, "calibration": 0.1, "serendipity": 0.8, "fairness": 0.2}
+        return {"main_diversity": 0.9, "diversity": 0.15, "calibration": 0.05, "serendipity": 0.55, "fairness": 0.25}
     # balanced (default)
-    return {"main_diversity": 0.5, "diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
+    return {"main_diversity": 0.5, "diversity": 0.25, "calibration": 0.25, "serendipity": 0.25, "fairness": 0.25}
 
 
 # ---------------------------------------------------------------------------
@@ -209,11 +213,13 @@ class ClickRequest(BaseModel):
     session_id: str
     news_id: str
     sliders: dict[str, float] | None = None
+    k: int = 10
 
 
 class RerankRequest(BaseModel):
     session_id: str
     sliders: dict[str, float]
+    k: int = 10
 
 
 class LoginRequest(BaseModel):
@@ -324,7 +330,7 @@ def record_click(req: ClickRequest) -> dict:
         sess["quiz_prefs"]["sliders"] if sess["quiz_prefs"] else _style_to_sliders("balanced")
     )
     method, params = _sliders_to_method(sliders)
-    recs = service.rerank(history=sess["history"], k=10, method=method, **params)
+    recs = service.rerank(history=sess["history"], k=max(5, min(req.k, 50)), method=method, **params)
     sess["last_recs"] = [r["news_id"] for r in recs]
 
     sess["clicked_count"] = sess.get("clicked_count", 0) + 1
@@ -341,7 +347,7 @@ def record_click(req: ClickRequest) -> dict:
 def rerank(req: RerankRequest) -> dict:
     sess = _get_session(req.session_id)
     method, params = _sliders_to_method(req.sliders)
-    recs = service.rerank(history=sess["history"], k=10, method=method, **params)
+    recs = service.rerank(history=sess["history"], k=max(5, min(req.k, 50)), method=method, **params)
     sess["last_recs"] = [r["news_id"] for r in recs]
 
     # Update stored slider values
@@ -449,23 +455,35 @@ def get_session_profile(session_id: str) -> dict:
 
 
 @app.get("/api/compare/{session_id}")
-def compare_feeds(session_id: str) -> dict:
+def compare_feeds(session_id: str, k: int = 10) -> dict:
     """
     Return baseline vs diversity recommendations side-by-side.
+    k: number of recommendations to return (10, 20, or 30).
     Read-only — does NOT mutate session slider state.
     """
+    k = max(5, min(k, 50))   # clamp to a safe range
     sess = _get_session(session_id)
     history = sess.get("history", [])
 
-    baseline_sliders  = {"main_diversity": 0.0, "diversity": 0.0, "calibration": 0.0, "serendipity": 0.0, "fairness": 0.0}
-    diversity_sliders = {"main_diversity": 0.5, "diversity": 0.5, "calibration": 0.3, "serendipity": 0.2, "fairness": 0.2}
+    # Optimal composite weights from Phase 4 re-evaluation (composite_reeval.json)
+    OPTIMAL_COMPOSITE = {
+        "w_relevance":   0.35,
+        "w_diversity":   0.25,
+        "w_calibration": 0.25,
+        "w_serendipity": 0.10,
+        "w_fairness":    0.05,
+        "explore_weight": 0.40,
+    }
 
-    baseline_recs = service.rerank(history=history, k=10, method="baseline")
-    div_method, div_params = _sliders_to_method(diversity_sliders)
-    diversity_recs = service.rerank(history=history, k=10, method=div_method, **div_params)
+    baseline_recs  = service.rerank(history=history, k=k, method="baseline")
+    diversity_recs = service.rerank(history=history, k=k, method="composite", **OPTIMAL_COMPOSITE)
 
-    def _fmt(recs: list[dict], sliders: dict) -> dict:
+    def _fmt(recs: list[dict], active_method: str) -> dict:
         ids = [r["news_id"] for r in recs]
+        scores = [float(r.get("score", 0.0)) for r in recs]
+        avg_relevance = round(sum(scores) / len(scores), 4) if scores else 0.0
+        metrics = service.compute_metrics(ids, history)
+        metrics["avg_relevance"] = avg_relevance
         return {
             "recommendations": [
                 {
@@ -478,14 +496,14 @@ def compare_feeds(session_id: str) -> dict:
                 }
                 for r in recs
             ],
-            "metrics": service.compute_metrics(ids, history),
+            "metrics": metrics,
             "category_distribution": dict(Counter(r["category"] for r in recs)),
-            "active_method": _sliders_to_method(sliders)[0],
+            "active_method": active_method,
         }
 
     return {
-        "baseline": _fmt(baseline_recs, baseline_sliders),
-        "diversity": _fmt(diversity_recs, diversity_sliders),
+        "baseline":  _fmt(baseline_recs,  "baseline"),
+        "diversity": _fmt(diversity_recs, "composite"),
     }
 
 

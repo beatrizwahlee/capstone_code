@@ -23,18 +23,6 @@ logger = logging.getLogger(__name__)
 # Mock article corpus (12 categories × 12 articles = 144 articles)
 # ---------------------------------------------------------------------------
 
-# ---------------------------------------------------------------------------
-# Category aliases — maps quiz topic IDs to real MIND dataset categories.
-# The MIND dataset does not have standalone 'science', 'technology', or
-# 'politics' categories; those topics are covered under 'news'.
-# ---------------------------------------------------------------------------
-
-_CATEGORY_ALIASES: dict[str, list[str]] = {
-    "science":    ["news"],
-    "technology": ["news"],
-    "politics":   ["news"],
-}
-
 MOCK_ARTICLES: list[dict] = [
     # ── SPORTS ──────────────────────────────────────────────────────────────
     {"news_id": "N001", "title": "Premier League: Manchester City's Haaland Scores Hat-Trick in Thrilling Victory", "category": "sports", "subcategory": "soccer", "abstract": "Manchester City secured a dominant 4-1 win over Arsenal on Saturday as Erling Haaland netted his tenth hat-trick of the season. The Norwegian striker is on pace to shatter all-time Premier League scoring records. Manager Pep Guardiola called it 'a perfect performance from the whole squad.'", "score": 0.95},
@@ -64,33 +52,33 @@ MOCK_ARTICLES: list[dict] = [
     {"news_id": "N023", "title": "CRISPR Gene Therapy Successfully Treats Inherited Blindness in Trial", "category": "health", "subcategory": "research", "abstract": "In a landmark gene therapy trial, CRISPR editing restored functional vision in 14 out of 16 patients with a previously incurable inherited form of blindness. The treatment delivered a corrective gene directly into photoreceptor cells in the retina.", "score": 0.74},
     {"news_id": "N024", "title": "Remote Patient Monitoring Reduces Hospital Readmissions by 40%", "category": "health", "subcategory": "medicine", "abstract": "Hospitals deploying continuous remote monitoring wearables for post-discharge heart failure patients saw a 40% reduction in 30-day readmissions. The devices track heart rate, blood pressure and fluid retention, alerting clinicians to warning signs early.", "score": 0.72},
 
-    # ── TECHNOLOGY ──────────────────────────────────────────────────────────
-    {"news_id": "N025", "title": "OpenAI Releases Next-Generation Model With Human-Level Reasoning", "category": "technology", "subcategory": "ai", "abstract": "OpenAI's latest language model achieves human-level performance on a suite of professional reasoning benchmarks including the bar exam, medical licensing test, and mathematical olympiad. The model introduces a novel chain-of-thought architecture.", "score": 0.96},
-    {"news_id": "N026", "title": "Major Data Breach Exposes 500 Million Users' Personal Information", "category": "technology", "subcategory": "cybersecurity", "abstract": "A sophisticated cyberattack on a major cloud services provider has compromised the personal data of 500 million users, including names, emails and encrypted passwords. Security researchers traced the breach to a zero-day vulnerability in the authentication system.", "score": 0.94},
-    {"news_id": "N027", "title": "Apple Unveils Revolutionary AR Glasses Designed to Replace Smartphones", "category": "technology", "subcategory": "gadgets", "abstract": "Apple has announced its most ambitious product in a decade: a pair of augmented reality glasses that can display information, take calls, and run apps without a phone. The device, priced at $2,499, ships to developers in the spring.", "score": 0.92},
-    {"news_id": "N028", "title": "Microsoft Integrates AI Copilot Into Every Windows Application", "category": "technology", "subcategory": "software", "abstract": "Microsoft's sweeping Windows update embeds an AI assistant directly into every first-party application, enabling users to automate tasks, generate content and analyze data with plain-language commands. Early reviews praise the productivity gains.", "score": 0.90},
-    {"news_id": "N029", "title": "SpaceX Starlink Now Provides Internet Connectivity to 100 Countries", "category": "technology", "subcategory": "internet", "abstract": "SpaceX's Starlink satellite internet service has reached the milestone of 100 countries served, with over 5 million active subscribers worldwide. The company reports average download speeds of 150 Mbps even in remote and rural areas.", "score": 0.88},
-    {"news_id": "N030", "title": "Google DeepMind Achieves New Milestone in Protein Structure Prediction", "category": "technology", "subcategory": "ai", "abstract": "DeepMind's AlphaFold 3 has predicted the 3D structures of virtually all known proteins with atomic accuracy, a breakthrough that scientists say will accelerate drug discovery by a decade. The complete database has been made freely available to researchers.", "score": 0.86},
-    {"news_id": "N031", "title": "New Ransomware Group Targets Critical Infrastructure in 30 Countries", "category": "technology", "subcategory": "cybersecurity", "abstract": "Cybersecurity agencies in the US, UK and EU have issued a joint warning about a new ransomware collective that has attacked hospitals, power grids and water treatment facilities across 30 nations. Experts advise organizations to patch known vulnerabilities immediately.", "score": 0.84},
-    {"news_id": "N032", "title": "Samsung Galaxy Ultra Sets New Benchmark for Smartphone Cameras", "category": "technology", "subcategory": "gadgets", "abstract": "DxOMark has awarded the new Samsung Galaxy Ultra the highest camera score in smartphone history, praising its 200-megapixel main sensor, 10x optical zoom, and AI-powered computational photography that rivals professional DSLR cameras.", "score": 0.82},
-    {"news_id": "N033", "title": "Open Source AI Model Outperforms Commercial Alternatives in Benchmarks", "category": "technology", "subcategory": "software", "abstract": "A new open-source language model released by a coalition of academic researchers outscores GPT-4 on 12 of 15 standard benchmarks while running on consumer hardware. The model's open weights have been downloaded 2 million times in its first week.", "score": 0.80},
-    {"news_id": "N034", "title": "Meta Announces Next-Generation Social VR Platform for 2025", "category": "technology", "subcategory": "internet", "abstract": "Meta has unveiled its most immersive virtual reality social platform yet, featuring photorealistic avatars, haptic feedback gloves and spatial audio that its developers say creates true presence. The platform will support up to 1,000 simultaneous users in a single space.", "score": 0.78},
-    {"news_id": "N035", "title": "Self-Driving Cars Ready for Full Commercial Deployment, Tesla Claims", "category": "technology", "subcategory": "ai", "abstract": "Tesla CEO Elon Musk announced that the company's Full Self-Driving software has achieved regulatory approval for Level 4 autonomous operation in 12 US states. The rollout begins in Q2 with a fleet of robotaxis operating in major metropolitan areas.", "score": 0.76},
-    {"news_id": "N036", "title": "Robot Chef Can Prepare 500 Different Recipes With Consistent Perfection", "category": "technology", "subcategory": "gadgets", "abstract": "A kitchen robotics startup has launched a countertop robot chef that can autonomously prepare 500 different recipes with restaurant-quality results. The device uses computer vision and precise motor control to chop, stir and plate meals in 20 minutes.", "score": 0.74},
+    # ── NEWS (Technology & Science stories) ─────────────────────────────────
+    {"news_id": "N025", "title": "OpenAI Releases Next-Generation Model With Human-Level Reasoning", "category": "news", "subcategory": "newstechnology", "abstract": "OpenAI's latest language model achieves human-level performance on a suite of professional reasoning benchmarks including the bar exam, medical licensing test, and mathematical olympiad. The model introduces a novel chain-of-thought architecture.", "score": 0.96},
+    {"news_id": "N026", "title": "Major Data Breach Exposes 500 Million Users' Personal Information", "category": "news", "subcategory": "newstechnology", "abstract": "A sophisticated cyberattack on a major cloud services provider has compromised the personal data of 500 million users, including names, emails and encrypted passwords. Security researchers traced the breach to a zero-day vulnerability in the authentication system.", "score": 0.94},
+    {"news_id": "N027", "title": "Apple Unveils Revolutionary AR Glasses Designed to Replace Smartphones", "category": "news", "subcategory": "newstechnology", "abstract": "Apple has announced its most ambitious product in a decade: a pair of augmented reality glasses that can display information, take calls, and run apps without a phone. The device, priced at $2,499, ships to developers in the spring.", "score": 0.92},
+    {"news_id": "N028", "title": "Microsoft Integrates AI Copilot Into Every Windows Application", "category": "news", "subcategory": "newstechnology", "abstract": "Microsoft's sweeping Windows update embeds an AI assistant directly into every first-party application, enabling users to automate tasks, generate content and analyze data with plain-language commands. Early reviews praise the productivity gains.", "score": 0.90},
+    {"news_id": "N029", "title": "SpaceX Starlink Now Provides Internet Connectivity to 100 Countries", "category": "news", "subcategory": "newstechnology", "abstract": "SpaceX's Starlink satellite internet service has reached the milestone of 100 countries served, with over 5 million active subscribers worldwide. The company reports average download speeds of 150 Mbps even in remote and rural areas.", "score": 0.88},
+    {"news_id": "N030", "title": "Google DeepMind Achieves New Milestone in Protein Structure Prediction", "category": "news", "subcategory": "newsscience", "abstract": "DeepMind's AlphaFold 3 has predicted the 3D structures of virtually all known proteins with atomic accuracy, a breakthrough that scientists say will accelerate drug discovery by a decade. The complete database has been made freely available to researchers.", "score": 0.86},
+    {"news_id": "N031", "title": "New Ransomware Group Targets Critical Infrastructure in 30 Countries", "category": "news", "subcategory": "newstechnology", "abstract": "Cybersecurity agencies in the US, UK and EU have issued a joint warning about a new ransomware collective that has attacked hospitals, power grids and water treatment facilities across 30 nations. Experts advise organizations to patch known vulnerabilities immediately.", "score": 0.84},
+    {"news_id": "N032", "title": "Samsung Galaxy Ultra Sets New Benchmark for Smartphone Cameras", "category": "news", "subcategory": "newstechnology", "abstract": "DxOMark has awarded the new Samsung Galaxy Ultra the highest camera score in smartphone history, praising its 200-megapixel main sensor, 10x optical zoom, and AI-powered computational photography that rivals professional DSLR cameras.", "score": 0.82},
+    {"news_id": "N033", "title": "Open Source AI Model Outperforms Commercial Alternatives in Benchmarks", "category": "news", "subcategory": "newstechnology", "abstract": "A new open-source language model released by a coalition of academic researchers outscores GPT-4 on 12 of 15 standard benchmarks while running on consumer hardware. The model's open weights have been downloaded 2 million times in its first week.", "score": 0.80},
+    {"news_id": "N034", "title": "Meta Announces Next-Generation Social VR Platform for 2025", "category": "news", "subcategory": "newstechnology", "abstract": "Meta has unveiled its most immersive virtual reality social platform yet, featuring photorealistic avatars, haptic feedback gloves and spatial audio that its developers say creates true presence. The platform will support up to 1,000 simultaneous users in a single space.", "score": 0.78},
+    {"news_id": "N035", "title": "Self-Driving Cars Ready for Full Commercial Deployment, Tesla Claims", "category": "news", "subcategory": "newstechnology", "abstract": "Tesla CEO Elon Musk announced that the company's Full Self-Driving software has achieved regulatory approval for Level 4 autonomous operation in 12 US states. The rollout begins in Q2 with a fleet of robotaxis operating in major metropolitan areas.", "score": 0.76},
+    {"news_id": "N036", "title": "Webb Telescope Finds Possible Biosignatures on Habitable Exoplanet", "category": "news", "subcategory": "newsscience", "abstract": "The James Webb Space Telescope has detected dimethyl sulfide in the atmosphere of K2-18b, a chemical that on Earth is only produced by living organisms. Scientists urge caution but say the finding is the most promising hint of extraterrestrial biology ever detected.", "score": 0.74},
 
-    # ── POLITICS ────────────────────────────────────────────────────────────
-    {"news_id": "N037", "title": "Historic Voter Turnout in Midterms Reshapes Congressional Landscape", "category": "politics", "subcategory": "elections", "abstract": "Record-breaking voter participation in the midterm elections has produced a dramatically altered Congress, with independent candidates winning 15 seats and shifting the balance of power. Political analysts say the results signal a historic rejection of extreme partisanship.", "score": 0.91},
-    {"news_id": "N038", "title": "Senate Passes Landmark Climate Bill After Months of Bipartisan Talks", "category": "politics", "subcategory": "policy", "abstract": "The US Senate passed a sweeping climate bill 64-36 with unusual bipartisan support, allocating $1.2 trillion for clean energy transition, grid modernization and domestic manufacturing. The legislation is considered the most significant climate action in US history.", "score": 0.89},
-    {"news_id": "N039", "title": "NATO Summit Agrees on Largest Defense Spending Increase in History", "category": "politics", "subcategory": "international", "abstract": "NATO member states at the Brussels summit unanimously agreed to raise defense spending targets to 3% of GDP, the alliance's largest coordinated military investment since the Cold War. The decision was driven by an evolving security landscape in Eastern Europe.", "score": 0.87},
-    {"news_id": "N040", "title": "House Passes Comprehensive Immigration Reform Bill 240-190", "category": "politics", "subcategory": "congress", "abstract": "A bipartisan coalition in the House of Representatives passed the most comprehensive immigration reform package in 35 years, creating a pathway to citizenship for 11 million undocumented residents while strengthening border security measures.", "score": 0.85},
-    {"news_id": "N041", "title": "President Signs Executive Order on AI Safety and National Security", "category": "politics", "subcategory": "policy", "abstract": "The President signed a sweeping executive order establishing mandatory safety evaluations for large AI models before commercial deployment, along with new rules restricting the export of AI chips to adversarial nations. Tech industry reaction has been mixed.", "score": 0.83},
-    {"news_id": "N042", "title": "Poll Shows Independent Voters Shifting Away From Both Major Parties", "category": "politics", "subcategory": "elections", "abstract": "A new Gallup survey finds that 47% of Americans now identify as independent, an all-time high, with both parties seeing declining loyalty among voters under 40. Analysts warn the trend could upend traditional election modeling.", "score": 0.81},
-    {"news_id": "N043", "title": "Supreme Court Rules in Landmark Digital Privacy Case", "category": "politics", "subcategory": "policy", "abstract": "In a 6-3 decision, the Supreme Court ruled that the government requires a warrant to access real-time location data from cell phones, dramatically expanding Fourth Amendment protections into the digital era. Legal experts are calling it a generational ruling.", "score": 0.79},
-    {"news_id": "N044", "title": "G7 Leaders Announce Coordinated Strategy to Combat Inflation", "category": "politics", "subcategory": "international", "abstract": "The G7 summit concluded with a joint communiqué outlining a synchronized fiscal and monetary policy response to persistent global inflation. Leaders agreed on coordinated interest rate communication and a strategic reserve release to stabilize energy markets.", "score": 0.77},
-    {"news_id": "N045", "title": "Debt Ceiling Deal Reached After Weeks of Tense Negotiations", "category": "politics", "subcategory": "congress", "abstract": "Congressional leaders and the White House reached a last-minute agreement to raise the debt ceiling, averting a first-ever US default. The deal includes $500 billion in spending caps over two years and new work requirements for some benefit programs.", "score": 0.75},
-    {"news_id": "N046", "title": "New Federal Standards Prioritize AI and Digital Literacy in Schools", "category": "politics", "subcategory": "policy", "abstract": "The Department of Education released new voluntary national standards making artificial intelligence literacy and computational thinking core curriculum components from kindergarten through 12th grade, responding to a bipartisan push to prepare students for an AI-driven economy.", "score": 0.73},
-    {"news_id": "N047", "title": "UN Climate Summit Reaches Historic Agreement on Carbon Reduction", "category": "politics", "subcategory": "international", "abstract": "Nations at the COP31 climate summit have agreed to a binding framework requiring 50% reduction in carbon emissions by 2035, with a $500 billion fund to help developing nations transition to clean energy. The deal represents the most ambitious climate commitment ever made.", "score": 0.71},
-    {"news_id": "N048", "title": "White House Unveils $2 Trillion Infrastructure Renewal Initiative", "category": "politics", "subcategory": "policy", "abstract": "The administration announced the largest domestic infrastructure investment in American history, targeting roads, bridges, high-speed rail, broadband internet and water systems. The plan would be funded through a combination of bonds and targeted corporate tax increases.", "score": 0.69},
+    # ── NEWS (Politics & World stories) ─────────────────────────────────────
+    {"news_id": "N037", "title": "Historic Voter Turnout in Midterms Reshapes Congressional Landscape", "category": "news", "subcategory": "newspolitics", "abstract": "Record-breaking voter participation in the midterm elections has produced a dramatically altered Congress, with independent candidates winning 15 seats and shifting the balance of power. Political analysts say the results signal a historic rejection of extreme partisanship.", "score": 0.91},
+    {"news_id": "N038", "title": "Senate Passes Landmark Climate Bill After Months of Bipartisan Talks", "category": "news", "subcategory": "newspolitics", "abstract": "The US Senate passed a sweeping climate bill 64-36 with unusual bipartisan support, allocating $1.2 trillion for clean energy transition, grid modernization and domestic manufacturing. The legislation is considered the most significant climate action in US history.", "score": 0.89},
+    {"news_id": "N039", "title": "NATO Summit Agrees on Largest Defense Spending Increase in History", "category": "news", "subcategory": "newsworld", "abstract": "NATO member states at the Brussels summit unanimously agreed to raise defense spending targets to 3% of GDP, the alliance's largest coordinated military investment since the Cold War. The decision was driven by an evolving security landscape in Eastern Europe.", "score": 0.87},
+    {"news_id": "N040", "title": "House Passes Comprehensive Immigration Reform Bill 240-190", "category": "news", "subcategory": "newspolitics", "abstract": "A bipartisan coalition in the House of Representatives passed the most comprehensive immigration reform package in 35 years, creating a pathway to citizenship for 11 million undocumented residents while strengthening border security measures.", "score": 0.85},
+    {"news_id": "N041", "title": "President Signs Executive Order on AI Safety and National Security", "category": "news", "subcategory": "newspolitics", "abstract": "The President signed a sweeping executive order establishing mandatory safety evaluations for large AI models before commercial deployment, along with new rules restricting the export of AI chips to adversarial nations. Tech industry reaction has been mixed.", "score": 0.83},
+    {"news_id": "N042", "title": "Poll Shows Independent Voters Shifting Away From Both Major Parties", "category": "news", "subcategory": "newspolitics", "abstract": "A new Gallup survey finds that 47% of Americans now identify as independent, an all-time high, with both parties seeing declining loyalty among voters under 40. Analysts warn the trend could upend traditional election modeling.", "score": 0.81},
+    {"news_id": "N043", "title": "Supreme Court Rules in Landmark Digital Privacy Case", "category": "news", "subcategory": "newspolitics", "abstract": "In a 6-3 decision, the Supreme Court ruled that the government requires a warrant to access real-time location data from cell phones, dramatically expanding Fourth Amendment protections into the digital era. Legal experts are calling it a generational ruling.", "score": 0.79},
+    {"news_id": "N044", "title": "G7 Leaders Announce Coordinated Strategy to Combat Inflation", "category": "news", "subcategory": "newsworld", "abstract": "The G7 summit concluded with a joint communiqué outlining a synchronized fiscal and monetary policy response to persistent global inflation. Leaders agreed on coordinated interest rate communication and a strategic reserve release to stabilize energy markets.", "score": 0.77},
+    {"news_id": "N045", "title": "Debt Ceiling Deal Reached After Weeks of Tense Negotiations", "category": "news", "subcategory": "newspolitics", "abstract": "Congressional leaders and the White House reached a last-minute agreement to raise the debt ceiling, averting a first-ever US default. The deal includes $500 billion in spending caps over two years and new work requirements for some benefit programs.", "score": 0.75},
+    {"news_id": "N046", "title": "New Federal Standards Prioritize AI and Digital Literacy in Schools", "category": "news", "subcategory": "newspolitics", "abstract": "The Department of Education released new voluntary national standards making artificial intelligence literacy and computational thinking core curriculum components from kindergarten through 12th grade, responding to a bipartisan push to prepare students for an AI-driven economy.", "score": 0.73},
+    {"news_id": "N047", "title": "UN Climate Summit Reaches Historic Agreement on Carbon Reduction", "category": "news", "subcategory": "newsworld", "abstract": "Nations at the COP31 climate summit have agreed to a binding framework requiring 50% reduction in carbon emissions by 2035, with a $500 billion fund to help developing nations transition to clean energy. The deal represents the most ambitious climate commitment ever made.", "score": 0.71},
+    {"news_id": "N048", "title": "White House Unveils $2 Trillion Infrastructure Renewal Initiative", "category": "news", "subcategory": "newspolitics", "abstract": "The administration announced the largest domestic infrastructure investment in American history, targeting roads, bridges, high-speed rail, broadband internet and water systems. The plan would be funded through a combination of bonds and targeted corporate tax increases.", "score": 0.69},
 
     # ── FINANCE ─────────────────────────────────────────────────────────────
     {"news_id": "N049", "title": "S&P 500 Hits Record High as Tech Earnings Surpass All Expectations", "category": "finance", "subcategory": "stocks", "abstract": "The S&P 500 index reached a new all-time high after the big technology companies reported quarterly earnings that handily beat analyst estimates. Nvidia's results were particularly stunning, with revenue up 265% year-over-year driven by insatiable AI chip demand.", "score": 0.93},
@@ -134,19 +122,21 @@ MOCK_ARTICLES: list[dict] = [
     {"news_id": "N083", "title": "Solo Female Travel Safety Guide: Essential Tips for Every Destination", "category": "travel", "subcategory": "adventure", "abstract": "Experienced solo female travelers and safety experts share the practical precautions, booking strategies and local knowledge that make solo travel both empowering and secure in destinations from Southeast Asia to South America.", "score": 0.68},
     {"news_id": "N084", "title": "Best Travel Rewards Cards That Earn Free Flights Fastest in 2025", "category": "travel", "subcategory": "tips", "abstract": "Credit card analysts have ranked the top travel rewards cards based on sign-up bonuses, earning rates and transfer partner value. The top three cards can generate enough points for a business class round trip to Europe within three months of card opening.", "score": 0.66},
 
-    # ── SCIENCE ─────────────────────────────────────────────────────────────
-    {"news_id": "N085", "title": "NASA Artemis Mission Successfully Lands Astronauts on the Moon", "category": "science", "subcategory": "space", "abstract": "For the first time since Apollo 17 in 1972, NASA astronauts have walked on the lunar surface as part of the Artemis program. The mission, which included the first woman and first person of color to land on the Moon, marks the beginning of permanent lunar exploration.", "score": 0.97},
-    {"news_id": "N086", "title": "Arctic Ice Sheet Hits Lowest Recorded Level in February", "category": "science", "subcategory": "climate", "abstract": "Scientists report that Arctic sea ice extent has reached its lowest February measurement since satellite records began, 1.2 million square kilometers below the 1981-2010 average. Climate researchers say the accelerating loss is reshaping global weather patterns.", "score": 0.95},
-    {"news_id": "N087", "title": "New Deep-Sea Species Discovered in Unprecedented Pacific Expedition", "category": "science", "subcategory": "biology", "abstract": "A scientific expedition to the Mariana Trench using next-generation submersibles has discovered 27 previously unknown species, including a bioluminescent shrimp, a transparent octopus and a bacteria that thrives at pressures 1,000 times greater than sea level.", "score": 0.93},
-    {"news_id": "N088", "title": "Physicists Achieve Room-Temperature Superconductivity Breakthrough", "category": "science", "subcategory": "physics", "abstract": "Researchers at MIT have confirmed a material that conducts electricity with zero resistance at room temperature and normal atmospheric pressure. If the findings are replicated, the discovery would transform power transmission, computing and transportation.", "score": 0.91},
-    {"news_id": "N089", "title": "Amazon Reforestation Project Plants Billionth Tree in Record Time", "category": "science", "subcategory": "environment", "abstract": "A coalition of NGOs, local communities and tech companies reached the milestone of planting one billion native trees across 2.4 million hectares of the Brazilian Amazon, three years ahead of schedule. Satellite data confirms a measurable increase in regional rainfall.", "score": 0.89},
-    {"news_id": "N090", "title": "Webb Telescope Finds Possible Biosignatures on Habitable Exoplanet", "category": "science", "subcategory": "space", "abstract": "The James Webb Space Telescope has detected dimethyl sulfide in the atmosphere of K2-18b, a chemical that on Earth is only produced by living organisms. Scientists urge caution but say the finding is the most promising hint of extraterrestrial biology ever detected.", "score": 0.87},
-    {"news_id": "N091", "title": "Record Heatwaves Conclusively Linked to Climate Change", "category": "science", "subcategory": "climate", "abstract": "An authoritative new attribution study finds that the devastating heatwaves of last summer were made at least 5 times more likely and 3°C hotter by human-caused climate change. The findings, from 27 research institutions, represent scientific consensus.", "score": 0.85},
-    {"news_id": "N092", "title": "Gene Drive Eliminates Malaria-Carrying Mosquitoes in Field Trial", "category": "science", "subcategory": "biology", "abstract": "The first open-environment test of a gene drive successfully reduced populations of Anopheles malaria mosquitoes by 95% across a 100 square-kilometer area in Burkina Faso, with no detectable effect on other insect species in the ecosystem.", "score": 0.83},
-    {"news_id": "N093", "title": "Quantum Internet Transmits Secure Data Over 1,000 Kilometers", "category": "science", "subcategory": "physics", "abstract": "Chinese scientists have demonstrated quantum-encrypted data transmission over 1,000 kilometers using a combination of ground-based fiber and a quantum satellite relay, a critical step toward a globally secure quantum internet.", "score": 0.81},
-    {"news_id": "N094", "title": "SpaceX Mars Mission First Human Landing Planned for 2028", "category": "science", "subcategory": "space", "abstract": "SpaceX CEO Elon Musk presented updated plans for the first crewed Mars landing mission, targeting a launch in late 2027 for a 2028 surface landing. The mission will use a fully reusable Starship configuration carrying six astronauts and 100 tons of supplies.", "score": 0.79},
-    {"news_id": "N095", "title": "Ocean Cleanup Project Removes 100,000 Tons of Plastic from Pacific", "category": "science", "subcategory": "environment", "abstract": "The Ocean Cleanup's expanded fleet of passive collection systems has now removed 100,000 metric tons of plastic from the Great Pacific Garbage Patch, with advanced processing converting 40% of the retrieved material into durable products.", "score": 0.77},
-    {"news_id": "N096", "title": "World's First Lab-Grown Organ Successfully Transplanted in Human", "category": "science", "subcategory": "biology", "abstract": "Surgeons at Duke University Medical Center transplanted a bioengineered kidney grown from the patient's own stem cells, eliminating rejection risk and removing the need for immunosuppressant drugs. The patient, who had been on dialysis for eight years, is recovering well.", "score": 0.75},
+    # ── MUSIC ────────────────────────────────────────────────────────────────
+    {"news_id": "N085", "title": "Billboard Hot 100: New Artist Breaks First-Week Streaming Record", "category": "music", "subcategory": "musicnews", "abstract": "A breakout artist has shattered the first-week streaming record on the Billboard Hot 100, accumulating 180 million streams in seven days. The track has displaced established acts from the top spot in 42 countries and is on pace for the fastest-selling debut in chart history.", "score": 0.97},
+    {"news_id": "N086", "title": "Vinyl Sales Surpass CD Sales for Third Consecutive Year in 2025", "category": "music", "subcategory": "musicnews", "abstract": "The Recording Industry Association of America reports that vinyl record sales generated more revenue than CDs for the third straight year, continuing a 19-year growth streak. Total vinyl revenue reached $1.4 billion, underscoring the format's sustained cultural revival among younger listeners.", "score": 0.95},
+    {"news_id": "N087", "title": "Country Music's Global Boom: Genre Fusion Drives International Streaming", "category": "music", "subcategory": "musicnews", "abstract": "A new generation of country artists is attracting international audiences by blending traditional instrumentation with hip-hop rhythms, pop production and R&B vocal styles. Industry analysts say the genre's global streaming numbers have tripled in three years.", "score": 0.93},
+    {"news_id": "N088", "title": "Streaming Royalties: Why Musicians Are Still Fighting for Fair Pay", "category": "music", "subcategory": "musicnews", "abstract": "Despite billions in streaming revenue, the vast majority of working musicians earn less than $1,000 per year from streaming platforms. Artists' advocacy groups are pushing for updated royalty frameworks as legislation aimed at reforming the music industry moves through Congress.", "score": 0.91},
+    {"news_id": "N089", "title": "Classic Albums Remastered: Why the Sonic Difference Is Worth Hearing", "category": "music", "subcategory": "musicnews", "abstract": "Audio engineers and music critics make the case for newly remastered editions of iconic albums, explaining how modern technology reveals details buried in original recordings. Several remastered releases have re-entered the charts decades after their debut.", "score": 0.89},
+    {"news_id": "N090", "title": "Music Festival Season 2025: Headliners, Tickets, and What to Expect", "category": "music", "subcategory": "musicnews", "abstract": "A comprehensive guide to the biggest music festivals of 2025 covers headliners, ticket availability and travel logistics for Coachella, Glastonbury, Lollapalooza and a dozen other major events. Several festivals have expanded capacity to meet post-pandemic pent-up demand.", "score": 0.87},
+
+    # ── MOVIES ───────────────────────────────────────────────────────────────
+    {"news_id": "N091", "title": "Summer Blockbuster Season 2025: The 10 Most Anticipated Films", "category": "movies", "subcategory": "movienews", "abstract": "Film critics and industry insiders preview the ten most eagerly awaited releases of summer 2025, from franchise sequels to original scripts generating Oscar buzz. Early tracking suggests multiple films could challenge all-time opening weekend box office records.", "score": 0.95},
+    {"news_id": "N092", "title": "Cannes 2025 Palme d'Or Winner Sparks Standing Ovation and Debate", "category": "movies", "subcategory": "movienews", "abstract": "The Cannes Film Festival's top prize went to a debut director's autobiographical drama that divided the jury but united critics in recognizing a major new filmmaking voice. The film's unflinching examination of immigration drew extended applause and political commentary.", "score": 0.93},
+    {"news_id": "N093", "title": "A24's Awards Season Slate: Four Films Competing in Major Categories", "category": "movies", "subcategory": "movienews", "abstract": "Studio A24 has positioned four films as frontrunners across multiple Oscar categories, continuing its remarkable run of critically acclaimed releases. Industry analysts are studying the studio's development model as a blueprint for independent filmmaking success.", "score": 0.91},
+    {"news_id": "N094", "title": "AI Visual Effects Are Transforming How Blockbusters Get Made", "category": "movies", "subcategory": "movienews", "abstract": "Visual effects supervisors explain how AI tools are transforming film production by drastically reducing the cost and time required for complex effects work. While some artists welcome the efficiency gains, others raise concerns about workforce displacement in the VFX industry.", "score": 0.89},
+    {"news_id": "N095", "title": "Box Office 2025: Original Films Are Outperforming Sequels", "category": "movies", "subcategory": "movienews", "abstract": "Box office analysts report a surprising 2025 trend: original films with compelling concepts are outperforming franchise sequels at a rate unseen since the 1990s. Studios are increasingly greenlighting scripts that do not rely on pre-existing intellectual property.", "score": 0.87},
+    {"news_id": "N096", "title": "Why More Directors Are Choosing Theatrical Releases Over Streaming", "category": "movies", "subcategory": "movienews", "abstract": "After years of streaming dominance, a growing number of prominent directors are insisting on theatrical releases, citing audience energy, the communal experience and data showing that theatrical runs boost long-term streaming performance for the same titles.", "score": 0.85},
 
     # ── FOOD AND DRINK ────────────────────────────────────────────────────────
     {"news_id": "N097", "title": "The Perfect Homemade Sourdough Bread Recipe That Never Fails", "category": "foodanddrink", "subcategory": "recipes", "abstract": "A professional baker shares the meticulously tested recipe and technique for reliably perfect sourdough, covering starter maintenance, hydration ratios, bulk fermentation timing and the scoring patterns that produce that signature crackling crust.", "score": 0.87},
@@ -213,6 +203,32 @@ for _art in MOCK_ARTICLES:
 ALL_CATEGORIES: list[str] = sorted(_BY_CATEGORY.keys())
 
 # ---------------------------------------------------------------------------
+# Corpus category distribution — approximates real MIND dataset proportions.
+# The mock corpus has equal article counts per category (12 each), but the
+# real MIND dataset is heavily skewed.  This dict lets the mock fairness
+# metric use realistic corpus proportions without physically multiplying
+# articles, mirroring how DiversityReranker receives corpus_category_dist.
+# Source: MIND large dataset category breakdown (approximate).
+# ---------------------------------------------------------------------------
+CORPUS_CATEGORY_FREQ: dict[str, float] = {
+    "sports":        0.315,
+    "news":          0.300,
+    "finance":       0.058,
+    "travel":        0.049,
+    "lifestyle":     0.045,
+    "video":         0.045,
+    "foodanddrink":  0.044,
+    "weather":       0.042,
+    "autos":         0.030,
+    "health":        0.029,
+    "tv":            0.013,
+    "music":         0.012,
+    "entertainment": 0.008,
+    "movies":        0.008,
+    "kids":          0.001,
+}
+
+# ---------------------------------------------------------------------------
 # Mock user profiles (demo accounts)
 # ---------------------------------------------------------------------------
 
@@ -223,8 +239,8 @@ MOCK_USER_PROFILES: dict[str, dict] = {
         "history": ["N001", "N002", "N003", "N004", "N005", "N006", "N007", "N008", "N009", "N010", "N011", "N012"],
     },
     "U1002": {
-        "display_name": "Jordan — Tech Enthusiast",
-        "top_categories": ["technology", "science"],
+        "display_name": "Jordan — Tech & Music Fan",
+        "top_categories": ["news", "music"],
         "history": ["N025", "N026", "N027", "N028", "N029", "N030", "N031", "N032", "N033", "N034", "N085", "N088"],
     },
     "U1003": {
@@ -234,17 +250,17 @@ MOCK_USER_PROFILES: dict[str, dict] = {
     },
     "U1004": {
         "display_name": "Riley — News & Politics",
-        "top_categories": ["politics", "finance"],
+        "top_categories": ["news", "finance"],
         "history": ["N037", "N038", "N039", "N040", "N041", "N042", "N043", "N049", "N050", "N055"],
     },
     "U1005": {
         "display_name": "Sam — Finance & Markets",
-        "top_categories": ["finance", "technology"],
+        "top_categories": ["finance", "news"],
         "history": ["N049", "N050", "N051", "N052", "N053", "N054", "N055", "N056", "N057", "N058", "N059"],
     },
     "U1006": {
         "display_name": "Taylor — Curious Reader",
-        "top_categories": ["science", "travel", "entertainment"],
+        "top_categories": ["music", "travel", "entertainment"],
         "history": ["N061", "N062", "N073", "N074", "N085", "N086", "N087", "N090", "N097", "N121"],
     },
 }
@@ -425,10 +441,28 @@ def _mock_composite(history: list[str], k: int, **params: Any) -> list[dict]:
             cur_prop = _sc.count(cat) / _n
             tgt_prop = target_dist.get(cat, uniform)
             cal_score = min(1.0, max(0.0, (tgt_prop - cur_prop) * len(ALL_CATEGORIES)))
-            # 4. Serendipity: prefer categories outside reading history
-            ser_score = 0.0 if cat in hist_cats_set else 1.0
-            # 5. Fairness: prefer articles whose popularity matches user preference
-            fair_score = 1.0 - abs(a["score"] - user_pop_mean)
+            # 4. Serendipity: new-to-list (primary) × outside-history (secondary).
+            # A category already in the selected list scores 0 (no more serendipity
+            # from repetition). A category not yet in the list scores 1.0 if it's
+            # outside reading history, or 0.1 if familiar but still novel for this
+            # list. This ensures fresh-history (0.1) beats repeat-non-history (0.0),
+            # enabling full coverage even when only serendipity weight is active.
+            is_new_to_list  = 1.0 if _sc.count(cat) == 0 else 0.0
+            history_novelty = 1.0 if cat not in hist_cats_set else 0.1
+            ser_score       = is_new_to_list * history_novelty
+            # 5. Fairness: scarcity-weighted minority boost.
+            # Goal: give corpus-rare categories (weather, autos, technology)
+            # a stronger push than dominant ones (sports, politics).
+            # Formula: reward = gap_below_equal_share × scarcity_multiplier
+            #   scarcity_multiplier = uniform / corpus_prop  (weather→8.3×, sports→0.44×)
+            # This is supply-side fairness: the target is equal representation,
+            # amplified proportionally for how under-served the category is in
+            # the corpus — distinct from calibration (which targets user history).
+            corpus_prop     = CORPUS_CATEGORY_FREQ.get(cat, uniform)
+            cur_prop        = _sc.count(cat) / _n
+            gap             = max(0.0, uniform - cur_prop)
+            scarcity        = uniform / corpus_prop          # > 1 for rare cats, < 1 for dominant
+            fair_score      = min(1.0, gap * scarcity / uniform)
             return (
                 w_rel  * rel
                 + w_div  * div_score
@@ -493,7 +527,7 @@ class RecommenderService:
         self._reranker = None
         self._analyzer = None
 
-        use_real = os.environ.get("NEWSLENS_REAL_MODE", "").lower() in ("1", "true", "yes")
+        use_real = os.environ.get("NEWSLENS_REAL_MODE", "1").lower() not in ("0", "false", "no")
         if use_real:
             try:
                 self._load_real_models(base_dir)
@@ -543,6 +577,12 @@ class RecommenderService:
         self._baseline = BaselineRecommender.load(baseline_path, embeddings_dir)
         self._news_df = pd.read_csv(news_path)
         news_categories = dict(zip(self._news_df["news_id"], self._news_df["category"]))
+        news_subcategories = dict(zip(self._news_df["news_id"], self._news_df["subcategory"]))
+
+        cat_counts = self._news_df["category"].value_counts()
+        corpus_category_dist = (cat_counts / cat_counts.sum()).to_dict()
+        subcat_counts = self._news_df["subcategory"].value_counts()
+        corpus_subcategory_dist = (subcat_counts / subcat_counts.sum()).to_dict()
 
         self._reranker = DiversityReranker(
             baseline_recommender=self._baseline,
@@ -550,6 +590,9 @@ class RecommenderService:
             news_id_to_idx=self._baseline.news_id_to_idx,
             news_categories=news_categories,
             popularity_scores=self._baseline.popularity_scores,
+            corpus_category_dist=corpus_category_dist,
+            corpus_subcategory_dist=corpus_subcategory_dist,
+            news_subcategories=news_subcategories,
         )
         self._analyzer = EchoChamberAnalyzer(
             recommender=self._baseline,
@@ -649,29 +692,26 @@ class RecommenderService:
         if self.mock_mode:
             pool = _BY_CATEGORY.get(category, [])
             return sorted(pool, key=lambda a: a["score"], reverse=True)[:k]
-        # Real mode: filter news_df, with alias fallback for categories not in MIND
+        # Real mode: filter news_df by category (all quiz topics are real MIND categories)
         if self._news_df is None:
             return []
-        candidates_to_try = [category] + _CATEGORY_ALIASES.get(category, [])
-        for cat in candidates_to_try:
-            mask = self._news_df["category"] == cat
-            subset = self._news_df[mask]
-            if len(subset) == 0:
-                continue
-            arts = []
-            for _, row in subset.iterrows():
-                nid = row["news_id"]
-                arts.append({
-                    "news_id": nid,
-                    "title": row.get("title", ""),
-                    "category": row.get("category", "unknown"),
-                    "subcategory": row.get("subcategory", ""),
-                    "abstract": row.get("abstract", ""),
-                    "score": float(self._baseline.popularity_scores.get(nid, 0.0)),
-                })
-            arts.sort(key=lambda a: a["score"], reverse=True)
-            return arts[:k]
-        return []
+        mask = self._news_df["category"] == category
+        subset = self._news_df[mask]
+        if len(subset) == 0:
+            return []
+        arts = []
+        for _, row in subset.iterrows():
+            nid = row["news_id"]
+            arts.append({
+                "news_id": nid,
+                "title": row.get("title", ""),
+                "category": row.get("category", "unknown"),
+                "subcategory": row.get("subcategory", ""),
+                "abstract": row.get("abstract", ""),
+                "score": float(self._baseline.popularity_scores.get(nid, 0.0)),
+            })
+        arts.sort(key=lambda a: a["score"], reverse=True)
+        return arts[:k]
 
     def recommend(self, history: list[str], k: int = 10) -> list[dict]:
         """Return top-k recommended articles (dict list)."""
@@ -752,12 +792,22 @@ class RecommenderService:
                 ent_val = float(self._analyzer.calculate_entropy(cats))
                 all_cats = list(self._analyzer.all_categories)
                 coverage_str = f"{len(set(cats))}/{len(all_cats)}"
+                # Use the actual corpus distribution (from the real MIND data)
+                # so category names match real MIND top-level categories.
+                actual_dist = self._reranker.corpus_category_dist if hasattr(self._reranker, 'corpus_category_dist') else {}
+                if actual_dist:
+                    minority_cats = {c for c, f in actual_dist.items() if f < 0.05}
+                else:
+                    minority_cats = {c for c, f in CORPUS_CATEGORY_FREQ.items() if f < 0.05}
+                rec_cats = set(cats)
+                minority_val = round(len(rec_cats & minority_cats) / len(minority_cats), 3) if minority_cats else 0.0
                 return {
                     "gini": gini_val,
                     "ild": ild_val,
                     "coverage": cov_val,
                     "coverage_str": coverage_str,
                     "entropy": ent_val,
+                    "minority_coverage": minority_val,
                 }
             except Exception:
                 pass  # fall through to mock metrics
@@ -766,10 +816,17 @@ class RecommenderService:
         cov_val = _coverage(cats, ALL_CATEGORIES)
         ent_val = _entropy(cats)
         coverage_str = f"{len(set(cats))}/{len(ALL_CATEGORIES)}"
+        # Minority coverage: fraction of corpus-rare categories (< 5% share)
+        # present in the recommendations. This is the metric most directly
+        # responsive to the fairness slider.
+        minority_cats = {c for c, f in CORPUS_CATEGORY_FREQ.items() if f < 0.05}
+        rec_cats = set(cats)
+        minority_val = round(len(rec_cats & minority_cats) / len(minority_cats), 3) if minority_cats else 0.0
         return {
             "gini": round(gini_val, 3),
             "ild": round(ild_val, 3),
             "coverage": round(cov_val, 3),
             "coverage_str": coverage_str,
             "entropy": round(ent_val, 3),
+            "minority_coverage": minority_val,
         }

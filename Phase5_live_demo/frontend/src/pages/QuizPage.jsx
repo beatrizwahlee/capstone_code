@@ -2,18 +2,18 @@ import { useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 
 const TOPICS = [
-  { id: 'sports',        label: 'Sports',       emoji: '⚽' },
-  { id: 'technology',    label: 'Technology',   emoji: '💻' },
-  { id: 'health',        label: 'Health',       emoji: '🏥' },
-  { id: 'politics',      label: 'Politics',     emoji: '🏛️' },
-  { id: 'finance',       label: 'Finance',      emoji: '📈' },
-  { id: 'entertainment', label: 'Entertain.',   emoji: '🎬' },
-  { id: 'travel',        label: 'Travel',       emoji: '✈️' },
-  { id: 'science',       label: 'Science',      emoji: '🔬' },
-  { id: 'foodanddrink',  label: 'Food & Drink', emoji: '🍳' },
-  { id: 'lifestyle',     label: 'Lifestyle',    emoji: '🌿' },
-  { id: 'autos',         label: 'Autos',        emoji: '🚗' },
-  { id: 'weather',       label: 'Weather',      emoji: '⛅' },
+  { id: 'sports',        label: 'Sports',       emoji: '⚽', desc: 'NFL, NBA, soccer, baseball, tennis, golf, Olympics & more' },
+  { id: 'news',          label: 'News',         emoji: '📰', desc: 'Politics, world affairs, science, technology & breaking news' },
+  { id: 'health',        label: 'Health',       emoji: '🏥', desc: 'Medicine, fitness, nutrition, mental health & wellness' },
+  { id: 'finance',       label: 'Finance',      emoji: '📈', desc: 'Markets, investing, personal finance, crypto & real estate' },
+  { id: 'entertainment', label: 'Entertain.',   emoji: '🎬', desc: 'Celebrity news, awards, TV, pop culture & viral trends' },
+  { id: 'travel',        label: 'Travel',       emoji: '✈️', desc: 'Destinations, tips, hotels, airlines & adventure guides' },
+  { id: 'foodanddrink',  label: 'Food & Drink', emoji: '🍳', desc: 'Recipes, restaurants, nutrition, wine & cooking techniques' },
+  { id: 'lifestyle',     label: 'Lifestyle',    emoji: '🌿', desc: 'Fashion, home decor, relationships, beauty & wellness' },
+  { id: 'autos',         label: 'Autos',        emoji: '🚗', desc: 'Car reviews, EVs, racing, buying guides & auto news' },
+  { id: 'weather',       label: 'Weather',      emoji: '⛅', desc: 'Forecasts, storms, climate, seasonal alerts & extreme events' },
+  { id: 'music',         label: 'Music',        emoji: '🎵', desc: 'Charts, album reviews, artists, concerts & music industry' },
+  { id: 'movies',        label: 'Movies',       emoji: '🎥', desc: 'Box office, reviews, film festivals, trailers & streaming picks' },
 ]
 
 const STYLES = [
@@ -21,19 +21,19 @@ const STYLES = [
     id: 'accurate',
     label: 'Accurate',
     desc: 'Stick to my topics — pure relevance ranking, no surprises.',
-    note: 'Uses baseline model',
+    note: 'Baseline model only',
   },
   {
     id: 'balanced',
     label: 'Balanced',
     desc: 'Mix relevance with discovery — a bit of everything.',
-    note: 'Uses MMR diversity',
+    note: 'Composite reranker',
   },
   {
     id: 'explore',
     label: 'Explore',
     desc: 'Surprise me — venture well outside my usual categories.',
-    note: 'Uses serendipity model',
+    note: 'Composite, max diversity',
   },
 ]
 
@@ -142,19 +142,27 @@ export default function QuizPage() {
               </p>
               <div className="grid grid-cols-3 gap-2 mb-6">
                 {TOPICS.map(t => (
-                  <button
-                    key={t.id}
-                    onClick={() => toggleTopic(t.id)}
-                    className={`flex flex-col items-center gap-1 py-3 border text-xs font-semibold
-                                uppercase tracking-wide transition-all ${
-                      selectedTopics.includes(t.id)
-                        ? 'border-ink bg-ink text-paper'
-                        : 'border-rule bg-paper text-ink hover:border-ink'
-                    }`}
-                  >
-                    <span className="text-lg">{t.emoji}</span>
-                    <span>{t.label}</span>
-                  </button>
+                  <div key={t.id} className="relative group">
+                    <button
+                      onClick={() => toggleTopic(t.id)}
+                      className={`w-full flex flex-col items-center gap-1 py-3 border text-xs font-semibold
+                                  uppercase tracking-wide transition-all ${
+                        selectedTopics.includes(t.id)
+                          ? 'border-ink bg-ink text-paper'
+                          : 'border-rule bg-paper text-ink hover:border-ink'
+                      }`}
+                    >
+                      <span className="text-lg">{t.emoji}</span>
+                      <span>{t.label}</span>
+                    </button>
+                    {/* Tooltip */}
+                    <div className="pointer-events-none absolute bottom-full left-1/2 -translate-x-1/2 mb-2 z-10
+                                    w-44 bg-ink text-paper text-xs leading-snug px-2.5 py-2 rounded
+                                    opacity-0 group-hover:opacity-100 transition-opacity duration-150">
+                      {t.desc}
+                      <div className="absolute top-full left-1/2 -translate-x-1/2 border-4 border-transparent border-t-ink" />
+                    </div>
+                  </div>
                 ))}
               </div>
               {selectedTopics.length === 0 && (

@@ -7,36 +7,38 @@ import MetricsDashboard from '../components/MetricsDashboard.jsx'
 
 const DEFAULT_SLIDERS = {
   main_diversity: 0.5,
-  diversity: 0.5,
-  calibration: 0.5,
-  serendipity: 0.5,
-  fairness: 0.5,
+  diversity: 0.25,
+  calibration: 0.25,
+  serendipity: 0.25,
+  fairness: 0.25,
 }
 
-const SUB_SLIDER_DEFAULTS = { diversity: 0.5, calibration: 0.5, serendipity: 0.5, fairness: 0.5 }
+const SUB_SLIDER_DEFAULTS = { diversity: 0.25, calibration: 0.25, serendipity: 0.25, fairness: 0.25 }
 
 function styleToSliders(style) {
-  if (style === 'accurate') return { main_diversity: 0.0, ...SUB_SLIDER_DEFAULTS }
-  if (style === 'explore')  return { main_diversity: 0.9, ...SUB_SLIDER_DEFAULTS }
+  if (style === 'accurate') return { main_diversity: 0.0, diversity: 0.25, calibration: 0.25, serendipity: 0.25, fairness: 0.25 }
+  if (style === 'explore')  return { main_diversity: 0.9, diversity: 0.15, calibration: 0.05, serendipity: 0.55, fairness: 0.25 }
   return DEFAULT_SLIDERS
 }
 
-async function apiRerank(sessionId, sliders) {
+async function apiRerank(sessionId, sliders, k) {
   const res = await fetch('/api/rerank', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, sliders }),
+    body: JSON.stringify({ session_id: sessionId, sliders, k }),
   })
+  if (res.status === 404) throw new Error('SESSION_EXPIRED')
   if (!res.ok) throw new Error(`Rerank error ${res.status}`)
   return res.json()
 }
 
-async function apiClick(sessionId, newsId, sliders) {
+async function apiClick(sessionId, newsId, sliders, k) {
   const res = await fetch('/api/click', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ session_id: sessionId, news_id: newsId, sliders }),
+    body: JSON.stringify({ session_id: sessionId, news_id: newsId, sliders, k }),
   })
+  if (res.status === 404) throw new Error('SESSION_EXPIRED')
   if (!res.ok) throw new Error(`Click error ${res.status}`)
   return res.json()
 }
@@ -52,6 +54,7 @@ export default function FeedPage() {
   const sessionId = localStorage.getItem('sessionId')
   const displayName = localStorage.getItem('displayName') || 'Guest Reader'
 
+  const [k, setK] = useState(10)
   const [recommendations, setRecommendations] = useState([])
   const [metrics, setMetrics] = useState(null)
   const [categoryDist, setCategoryDist] = useState({})
@@ -98,6 +101,15 @@ export default function FeedPage() {
     }
   }, []) // eslint-disable-line react-hooks/exhaustive-deps
 
+  function handleSessionExpired() {
+    localStorage.removeItem('sessionId')
+    localStorage.removeItem('quizCompleted')
+    localStorage.removeItem('initialRecs')
+    localStorage.removeItem('displayName')
+    localStorage.removeItem('quizStyle')
+    navigate('/')
+  }
+
   const handleRerank = useCallback(async (newSliders, immediate = false) => {
     if (!sessionId) return
     if (debounceRef.current) clearTimeout(debounceRef.current)
@@ -106,10 +118,11 @@ export default function FeedPage() {
       setLoading(true)
       setError(null)
       try {
-        const data = await apiRerank(sessionId, newSliders)
+        const data = await apiRerank(sessionId, newSliders, k)
         applyResponse(data)
       } catch (e) {
-        setError(e.message)
+        if (e.message === 'SESSION_EXPIRED') handleSessionExpired()
+        else setError(e.message)
       } finally {
         setLoading(false)
       }
@@ -120,7 +133,13 @@ export default function FeedPage() {
     } else {
       debounceRef.current = setTimeout(run, 400)
     }
-  }, [sessionId])
+  }, [sessionId, k])
+
+  // Re-fetch whenever k changes — handleRerank is recreated with the new k value
+  useEffect(() => {
+    if (!sessionId || recommendations.length === 0) return
+    handleRerank(sliders, true)
+  }, [k]) // eslint-disable-line
 
   function handleSliderChange(newSliders) {
     // When the main slider moves off zero for the first time,
@@ -145,10 +164,11 @@ export default function FeedPage() {
     setRefreshing(true)
     setError(null)
     try {
-      const data = await apiClick(sessionId, newsId, sliders)
+      const data = await apiClick(sessionId, newsId, sliders, k)  // k from state
       applyResponse(data)
     } catch (e) {
-      setError(e.message)
+      if (e.message === 'SESSION_EXPIRED') handleSessionExpired()
+      else setError(e.message)
     } finally {
       setRefreshing(false)
     }
@@ -215,10 +235,10 @@ export default function FeedPage() {
   const [article0, ...rest] = recommendations
 
   return (
-    <div className="min-h-screen bg-paper">
+    <div className="h-screen bg-paper flex flex-col">
 
       {/* ── Masthead ── */}
-      <header className="bg-paper border-b-4 border-ink sticky top-0 z-20">
+      <header className="bg-paper border-b-4 border-ink flex-shrink-0">
         <div className="max-w-7xl mx-auto px-4 pt-3 pb-1">
           {/* Top utility row */}
           <div className="flex items-center justify-between text-xs text-ink-light mb-1">
@@ -270,52 +290,60 @@ export default function FeedPage() {
             <span className="text-xs uppercase tracking-[0.25em] text-paper/80">
               Your Personalised Edition
             </span>
-            <span className={`text-xs uppercase tracking-widest px-2 py-0.5 font-bold
-              ${activeMethod === 'baseline' ? 'bg-white/10' : 'bg-white/20'}`}>
-              {activeMethod === 'baseline'  ? 'Accuracy Mode'  :
-               activeMethod === 'composite' ? 'Diversity Mode'  :
-               activeMethod === 'mmr'       ? 'Balanced Mode'  :
-               activeMethod === 'serendipity' ? 'Explore Mode' :
-               activeMethod === 'calibrated' ? 'Calibrated Mode' :
-               activeMethod === 'xquad'    ? 'Fair Coverage Mode' : activeMethod}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="text-xs text-paper/50 uppercase tracking-widest">Show</span>
+              {[10, 20, 30].map(n => (
+                <button
+                  key={n}
+                  onClick={() => setK(n)}
+                  className={`text-xs font-bold px-2 py-0.5 border transition-colors ${
+                    k === n
+                      ? 'border-paper bg-paper text-ink'
+                      : 'border-paper/30 text-paper/70 hover:border-paper/70 hover:text-paper'
+                  }`}
+                >
+                  {n}
+                </button>
+              ))}
+              <span className="text-xs text-paper/40 uppercase tracking-widest">articles</span>
+            </div>
           </div>
         </div>
       </header>
 
-      <div className="max-w-7xl mx-auto px-4 py-5">
-        {error && (
-          <div className="mb-4 border-l-4 border-red-600 bg-red-50 text-red-700 text-sm px-4 py-2">
-            {error}
-          </div>
-        )}
+      <div className="flex-1 min-h-0 overflow-hidden">
+        <div className="max-w-7xl mx-auto px-4 h-full flex gap-6">
 
-        {/* ── Echo chamber warning ── */}
-        {metrics?.gini > 0.7 && !echoDismissed && (
-          <div className="mb-4 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 flex items-start justify-between gap-4">
-            <div>
-              <p className="text-sm font-semibold text-amber-800">
-                ⚠ Echo chamber detected (Gini {metrics.gini.toFixed(2)})
-              </p>
-              <p className="text-xs text-amber-700 mt-0.5">
-                Your feed is heavily concentrated in a few categories. Try raising the Diversity slider to broaden your recommendations.
-              </p>
-            </div>
-            <button
-              onClick={() => setEchoDismissed(true)}
-              className="text-amber-500 hover:text-amber-700 text-lg flex-shrink-0"
-              title="Dismiss"
-            >
-              ×
-            </button>
-          </div>
-        )}
-
-        <div className="flex gap-6">
           {/* ── Main content ── */}
-          <main className={`flex-1 min-w-0 transition-opacity duration-200 ${
+          <main className={`flex-1 min-w-0 overflow-y-auto py-5 transition-opacity duration-200 ${
             (loading || refreshing) && recommendations.length > 0 ? 'opacity-60' : 'opacity-100'
           }`}>
+            {error && (
+              <div className="mb-4 border-l-4 border-red-600 bg-red-50 text-red-700 text-sm px-4 py-2">
+                {error}
+              </div>
+            )}
+
+            {/* ── Echo chamber warning ── */}
+            {metrics?.gini > 0.7 && !echoDismissed && (
+              <div className="mb-4 border-l-4 border-amber-500 bg-amber-50 px-4 py-3 flex items-start justify-between gap-4">
+                <div>
+                  <p className="text-sm font-semibold text-amber-800">
+                    ⚠ Echo chamber detected (Gini {metrics.gini.toFixed(2)})
+                  </p>
+                  <p className="text-xs text-amber-700 mt-0.5">
+                    Your feed is heavily concentrated in a few categories. Try raising the Diversity slider to broaden your recommendations.
+                  </p>
+                </div>
+                <button
+                  onClick={() => setEchoDismissed(true)}
+                  className="text-amber-500 hover:text-amber-700 text-lg flex-shrink-0"
+                  title="Dismiss"
+                >
+                  ×
+                </button>
+              </div>
+            )}
 
             {/* Skeletons while first load */}
             {loading && recommendations.length === 0 ? (
@@ -378,8 +406,8 @@ export default function FeedPage() {
           </main>
 
           {/* ── Sidebar ── */}
-          <aside className="w-64 flex-shrink-0 hidden lg:block">
-            <div className="sticky top-28 space-y-4">
+          <aside className="w-64 flex-shrink-0 hidden lg:block overflow-y-auto py-5">
+            <div className="space-y-4">
               <DiversitySidebar
                 sliders={sliders}
                 activeMethod={activeMethod}

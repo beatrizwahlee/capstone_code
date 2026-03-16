@@ -101,7 +101,7 @@ class MINDDataLoader:
         )
         
         # Parse time to datetime
-        df['time'] = pd.to_datetime(df['time'], format='%m/%d/%Y %I:%M:%S %p')
+        df['time'] = pd.to_datetime(df['time'], format='mixed', errors='coerce')
         
         # Parse history (space-separated news IDs)
         df['history'] = df['history'].fillna('').apply(

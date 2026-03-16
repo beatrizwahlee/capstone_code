@@ -7,6 +7,10 @@ MINDlarge_dev/
 MINDlarge_train/
 *.tsv
 *.vec
+data/
+models/
+recommenders/
+Phase_NRMS/
 
 ## Processed data and embeddings (large, generated)
 Phase0_data_processing/processed_data/

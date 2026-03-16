@@ -52,24 +52,37 @@ class DiversityReranker:
         news_id_to_idx: Dict[str, int],
         news_categories: Dict[str, str],
         popularity_scores: Optional[Dict[str, float]] = None,
+        corpus_category_dist: Optional[Dict[str, float]] = None,
+        corpus_subcategory_dist: Optional[Dict[str, float]] = None,
+        news_subcategories: Optional[Dict[str, str]] = None,
     ):
         """
         Args:
-            baseline_recommender:  Trained BaselineRecommender from Phase 2
-            embeddings:            Final embeddings from Phase 1
-            news_id_to_idx:        news_id → row index mapping
-            news_categories:       news_id → category mapping
-            popularity_scores:     news_id → popularity score (optional)
+            baseline_recommender:    Trained BaselineRecommender from Phase 2
+            embeddings:              Final embeddings from Phase 1
+            news_id_to_idx:          news_id → row index mapping
+            news_categories:         news_id → category mapping
+            popularity_scores:       news_id → popularity score (optional)
+            corpus_category_dist:    category → proportion in full corpus (for system fairness)
+            corpus_subcategory_dist: subcategory → proportion in full corpus (for system fairness)
+            news_subcategories:      news_id → subcategory mapping (for system fairness)
         """
         self.baseline = baseline_recommender
         self.embeddings = embeddings
         self.news_id_to_idx = news_id_to_idx
         self.news_categories = news_categories
         self.popularity_scores = popularity_scores or {}
+        self.corpus_category_dist = corpus_category_dist or {}
+        self.corpus_subcategory_dist = corpus_subcategory_dist or {}
+        self.news_subcategories = news_subcategories or {}
 
         # All unique categories
         self.all_categories = sorted(set(news_categories.values()))
         self.n_categories = len(self.all_categories)
+
+        # All unique subcategories (used for system-level fairness scoring)
+        self.all_subcategories = sorted(set(news_subcategories.values())) if news_subcategories else []
+        self.n_subcategories = len(self.all_subcategories)
 
         # Lazy-built category pool (built on first call)
         self._category_pool: Optional[Dict[str, List[Tuple[str, float]]]] = None
@@ -136,10 +149,19 @@ class DiversityReranker:
             if nid in self.news_categories
         }
 
-        # Minimum score so injected articles don't dominate
+        # Set injected articles at the 30th percentile of the natural score range
+        # so they are genuinely competitive when diversity/fairness weights are high,
+        # but still below most natural candidates on pure relevance.
+        # Previously used min_score * 0.5 which put injected articles below the
+        # normalization floor, giving them norm_rel = 0 and making them impossible
+        # to select regardless of fairness/diversity weights.
         scores = [s for _, s in candidates if s > 0]
-        min_score = min(scores) if scores else 0.01
-        injected_score = min_score * 0.5
+        if scores:
+            min_score = min(scores)
+            max_score = max(scores)
+            injected_score = min_score + 0.3 * (max_score - min_score)
+        else:
+            injected_score = 0.01
 
         augmented = list(candidates)
 
@@ -802,19 +824,24 @@ class DiversityReranker:
                Prevents embedding-similar articles from clustering.
 
           2. Calibration (user distribution):
-               max(0, target_prop(cat) - current_prop(cat)) × n_categories
+               (clip((target_prop(cat) - current_prop(cat)) × n_categories, −1, 1) + 1) / 2
                Target = (1-explore_weight)×user_history_dist + explore_weight×uniform.
-               Rewards filling categories under-represented relative to preferences.
+               Bidirectional: rewards under-represented and penalises over-represented
+               categories, actively discouraging category repetition beyond its fair share.
 
           3. Serendipity (unexpectedness):
-               (1 - cosine_sim(article, user_centroid)) / 2  ∈ [0, 1]
+               clip(1 − cosine_sim(article, user_centroid), 0, 1)
                Rewards articles distant from the user's mean taste embedding.
+               Wider effective range than (1−cos)/2 for typical news embeddings.
 
-          4. Fairness (popularity miscalibration):
-               1 - |pop_article - pop_user_mean| / max_pop  ∈ [0, 1]
-               User-side fairness: prefers articles whose popularity level
-               matches what the user historically reads (avoids forcing
-               mainstream or niche regardless of user preference).
+          4. Fairness (system-level corpus calibration):
+               max(0, corpus_subcat_prop(subcat) - current_rec_subcat_prop(subcat))
+                   × n_subcategories  ∈ [0, 1]
+               Rewards articles from subcategories under-represented in the current
+               recommendations relative to their proportion in the full corpus.
+               This is system-level fairness — the target is the corpus distribution,
+               not the user's history. Falls back to category-level if subcategory
+               distributions are unavailable.
 
         Final score:
             score(i) = w_rel  × norm_relevance(i)
@@ -888,23 +915,11 @@ class DiversityReranker:
         ]
         user_centroid = np.mean(history_embs, axis=0) if history_embs else None
 
-        # User's mean popularity (for fairness)
-        history_pops = [
-            self.popularity_scores.get(nid, 0.0)
-            for nid in user_history
-            if nid in self.popularity_scores
-        ]
-        user_pop_mean = float(np.mean(history_pops)) if history_pops else 0.0
-
-        # Pre-compute candidate embeddings and popularity range
+        # Pre-compute candidate embeddings
         candidate_embs = {
             nid: self.embeddings[self.news_id_to_idx[nid]]
             for nid in candidate_ids
         }
-        all_pops = [self.popularity_scores.get(nid, 0.0) for nid in candidate_ids]
-        max_pop = max(all_pops) if all_pops else 1.0
-        if max_pop == 0:
-            max_pop = 1.0
 
         # Normalise relevance to [0, 1] so all components share the same scale
         rel_vals = [relevance_scores.get(nid, 0.0) for nid in candidate_ids]
@@ -919,6 +934,7 @@ class DiversityReranker:
         selected: List[str] = []
         selected_embs: List[np.ndarray] = []
         selected_cats: Counter = Counter()
+        selected_subcats: Counter = Counter()
         remaining = set(candidate_ids)
 
         for _ in range(min(k, len(candidate_ids))):
@@ -940,23 +956,55 @@ class DiversityReranker:
                     max_sim = 0.0
                 div_score = min(1.0, max(0.0, 1.0 - max_sim))
 
-                # 3. Calibration: coverage gap toward user-adjusted target distribution
+                # 3. Calibration: bidirectional gap toward user-adjusted target distribution.
+                # Positive (under-represented) → rewards selection; negative (over-represented)
+                # → penalises selection. This actively discourages category repetition beyond
+                # its target share, unlike the old one-directional clip at 0.
                 current_prop = selected_cats.get(cat, 0) / n_selected
                 target_prop = target_dist.get(cat, uniform)
-                # Multiply by n_categories to normalise gap to [0, 1]
-                cal_score = min(1.0, max(0.0, (target_prop - current_prop) * self.n_categories))
+                cal_gap = (target_prop - current_prop) * self.n_categories
+                cal_score = (min(1.0, max(-1.0, cal_gap)) + 1.0) / 2.0  # Maps [-1,1] → [0,1]
 
-                # 4. Serendipity: distance from user's mean embedding centroid
+                # 4. Serendipity: distance from user's mean embedding centroid.
+                # Using 1 − cos (clipped to [0,1]) instead of (1 − cos)/2 to give
+                # a wider score range for typical news embeddings (cos ~ 0.3–0.7).
                 if user_centroid is not None:
                     cos_to_centroid = float(np.clip(emb @ user_centroid, -1.0, 1.0))
-                    ser_score = (1.0 - cos_to_centroid) / 2.0  # Map [-1, 1] → [0, 1]
+                    ser_score = min(1.0, max(0.0, 1.0 - cos_to_centroid))
                 else:
                     ser_score = 0.5
 
-                # 5. Fairness: popularity level matching user's historical preference
-                pop = self.popularity_scores.get(nid, 0.0)
-                pop_diff = abs(pop - user_pop_mean) / max_pop
-                fair_score = 1.0 - pop_diff  # 1.0 = perfect match, 0.0 = max mismatch
+                # 5. Fairness: scarcity-weighted minority boost.
+                # Goal: give corpus-rare subcategories/categories a stronger push
+                # than dominant ones (e.g. rare "travel/backpacking" >> common "news/politics").
+                # Formula: gap_below_equal_share × scarcity_multiplier
+                #   scarcity = uniform / corpus_prop  (rare→high multiplier, dominant→low)
+                # This is supply-side fairness — target is equal representation, amplified
+                # for how structurally under-served the item is in the corpus.
+                # Distinct from calibration (which targets user history distribution).
+                subcat = self.news_subcategories.get(nid, "")
+                if self.corpus_subcategory_dist and subcat:
+                    corpus_subcat_prop = self.corpus_subcategory_dist.get(subcat, 0.0)
+                    if corpus_subcat_prop > 0:
+                        uniform_sub = 1.0 / max(self.n_subcategories, 1)
+                        cur_sub_prop = selected_subcats.get(subcat, 0) / n_selected
+                        gap = max(0.0, uniform_sub - cur_sub_prop)
+                        scarcity = uniform_sub / corpus_subcat_prop
+                        fair_score = min(1.0, gap * scarcity / uniform_sub)
+                    else:
+                        fair_score = 0.0
+                elif self.corpus_category_dist:
+                    corpus_cat_prop = self.corpus_category_dist.get(cat, 0.0)
+                    if corpus_cat_prop > 0:
+                        uniform_cat = 1.0 / max(self.n_categories, 1)
+                        cur_cat_prop = selected_cats.get(cat, 0) / n_selected
+                        gap = max(0.0, uniform_cat - cur_cat_prop)
+                        scarcity = uniform_cat / corpus_cat_prop
+                        fair_score = min(1.0, gap * scarcity / uniform_cat)
+                    else:
+                        fair_score = 0.0
+                else:
+                    fair_score = 0.5
 
                 score = (
                     w_relevance   * rel
@@ -977,12 +1025,60 @@ class DiversityReranker:
                 best_cat = self.news_categories.get(best_item, "")
                 if best_cat:
                     selected_cats[best_cat] += 1
+                best_subcat = self.news_subcategories.get(best_item, "")
+                if best_subcat:
+                    selected_subcats[best_subcat] += 1
 
         return [(nid, relevance_scores.get(nid, 0.0)) for nid in selected]
 
     # -----------------------------------------------------------------------
     # Unified Interface
     # -----------------------------------------------------------------------
+
+    def random_rerank(
+        self,
+        candidates: List[Tuple[str, float]],
+        user_history: List[str],
+        k: int = 10,
+        inject_candidates: bool = True,
+        seed: Optional[int] = None,
+    ) -> List[Tuple[str, float]]:
+        """
+        Random re-ranker — purely random ordering of the candidate pool.
+
+        Used as a lower-bound baseline to contextualise diversity and accuracy
+        metrics for all other methods. Expected behaviour:
+          - AUC ≈ 0.5  (random ranking gives no accuracy signal)
+          - High diversity metrics (random selection samples broadly across
+            categories, giving good coverage and low Gini)
+
+        Args:
+            candidates:        Baseline candidates (news_id, relevance_score)
+            user_history:      User's click history (unused, kept for interface parity)
+            k:                 Number of items to select
+            inject_candidates: Augment pool with absent-category articles
+            seed:              Optional RNG seed for reproducibility
+
+        Returns:
+            k randomly selected (news_id, original_relevance_score) pairs
+        """
+        if not candidates:
+            return []
+
+        if inject_candidates:
+            candidates = self._inject_diverse_candidates(candidates, user_history)
+
+        candidate_ids = [nid for nid, _ in candidates if nid in self.news_id_to_idx]
+        relevance_scores = {nid: score for nid, score in candidates}
+
+        if not candidate_ids:
+            return []
+
+        rng = np.random.default_rng(seed)
+        shuffled = candidate_ids.copy()
+        rng.shuffle(shuffled)
+        selected = shuffled[:k]
+        return [(nid, relevance_scores.get(nid, 0.0)) for nid in selected]
 
     def rerank(
         self,
@@ -999,7 +1095,7 @@ class DiversityReranker:
             candidates:    Baseline candidates
             user_history:  User's click history
             k:             Number to select
-            method:        'mmr', 'xquad', 'calibrated', 'serendipity',
+            method:        'random', 'mmr', 'xquad', 'calibrated', 'serendipity',
                            'bounded_greedy', 'max_coverage', 'composite'
             **kwargs:      Method-specific parameters
 
@@ -1007,6 +1103,7 @@ class DiversityReranker:
             Re-ranked list
         """
         dispatch = {
+            'random': self.random_rerank,
             'mmr': self.mmr_rerank,
             'xquad': self.xquad_rerank,
             'calibrated': self.calibrated_rerank,
@@ -1028,6 +1125,6 @@ class DiversityReranker:
 if __name__ == "__main__":
     logger.info("Diversity Re-ranking Algorithms — Phase 4")
     logger.info(
-        "7 algorithms: MMR, xQuAD, Calibrated, Serendipity, "
+        "8 algorithms: Random, MMR, xQuAD, Calibrated, Serendipity, "
         "Bounded Greedy, Max Coverage, Composite"
     )
