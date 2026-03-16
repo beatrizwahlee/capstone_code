@@ -21,6 +21,13 @@ function styleToSliders(style) {
   return DEFAULT_SLIDERS
 }
 
+// Per-profile optimal presets (Option A — informed by Phase 4 global optimum)
+const PROFILE_PRESETS = {
+  'Specialist':      { main_diversity: 0.30, diversity: 0.15, calibration: 0.60, serendipity: 0.10, fairness: 0.15 },
+  'Balanced reader': { main_diversity: 0.55, diversity: 0.30, calibration: 0.35, serendipity: 0.20, fairness: 0.15 },
+  'Explorer':        { main_diversity: 0.85, diversity: 0.35, calibration: 0.10, serendipity: 0.45, fairness: 0.10 },
+}
+
 async function apiRerank(sessionId, sliders, k) {
   const res = await fetch('/api/rerank', {
     method: 'POST',
@@ -72,6 +79,8 @@ export default function FeedPage() {
   const [historyArticles, setHistoryArticles] = useState([])
   const [historyLoading, setHistoryLoading] = useState(false)
   const [diversityPreference, setDiversityPreference] = useState(null)
+  const [optimizeLabel, setOptimizeLabel] = useState(null)   // last detected profile label
+  const [optimizing, setOptimizing] = useState(false)
 
   const debounceRef = useRef(null)
 
@@ -150,6 +159,29 @@ export default function FeedPage() {
       : newSliders
     setSliders(finalSliders)
     handleRerank(finalSliders, false)
+  }
+
+  async function handleOptimize() {
+    if (!sessionId || optimizing) return
+    setOptimizing(true)
+    try {
+      const res = await fetch(`/api/profile/${sessionId}`)
+      const data = res.ok ? await res.json() : null
+      const label = data?.label ?? null
+      const preset = PROFILE_PRESETS[label] ?? (
+        // Fallback: infer from quiz style when not enough clicks yet
+        PROFILE_PRESETS[{
+          accurate: 'Specialist',
+          balanced: 'Balanced reader',
+          explore:  'Explorer',
+        }[localStorage.getItem('quizStyle')]] ?? PROFILE_PRESETS['Balanced reader']
+      )
+      setOptimizeLabel(label ?? 'Balanced reader')
+      setSliders(preset)
+      handleRerank(preset, true)
+    } finally {
+      setOptimizing(false)
+    }
   }
 
   // Click = mark as read + refresh feed (live update)
@@ -412,6 +444,9 @@ export default function FeedPage() {
                 sliders={sliders}
                 activeMethod={activeMethod}
                 onChange={handleSliderChange}
+                onOptimizeClick={handleOptimize}
+                optimizing={optimizing}
+                optimizeLabel={optimizeLabel}
               />
               {metrics && (
                 <MetricsDashboard

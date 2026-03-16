@@ -2,6 +2,9 @@
 __pycache__/
 *.pyc
 
+## Nested repos / external models
+news-recommendation-llm/
+
 ## Large raw data and embeddings
 MINDlarge_dev/
 MINDlarge_train/

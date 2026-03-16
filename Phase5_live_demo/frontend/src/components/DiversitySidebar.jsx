@@ -40,7 +40,7 @@ function LockIcon({ locked }) {
 const SUB_KEYS = SUB_SLIDERS.map(s => s.key)
 const BUDGET = 1.0
 
-export default function DiversitySidebar({ sliders, onChange }) {
+export default function DiversitySidebar({ sliders, onChange, onOptimizeClick, optimizing, optimizeLabel }) {
   const showSub = sliders.main_diversity > 0
   const [locked, setLocked] = useState({ diversity: false, calibration: false, serendipity: false, fairness: false })
 
@@ -83,6 +83,22 @@ export default function DiversitySidebar({ sliders, onChange }) {
       <div>
         <div className="section-rule mb-2" />
         <h2 className="text-xs font-bold uppercase tracking-widest text-ink">Controls</h2>
+      </div>
+
+      {/* Optimize button */}
+      <div>
+        <button
+          onClick={onOptimizeClick}
+          disabled={optimizing}
+          className="w-full text-xs font-semibold uppercase tracking-wide border border-ink bg-ink text-paper px-3 py-2 hover:bg-ink/80 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+        >
+          {optimizing ? 'Detecting profile…' : 'Optimize for my profile'}
+        </button>
+        {optimizeLabel && !optimizing && (
+          <p className="text-xs text-ink-light mt-1 text-center">
+            Applied preset for <span className="font-semibold text-ink">{optimizeLabel}</span>
+          </p>
+        )}
       </div>
 
       {/* Main accuracy ↔ explore slider */}
